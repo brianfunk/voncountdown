@@ -188,7 +188,7 @@ var countdown = function() {
 	console.log('countdown start ' );
 	
 	current_number--;	
-	current_string = numberstring(current_number, {'cap': 'title'});
+	current_string = numberstring(current_number, {'cap': 'title', 'punc': '!'});
 	current_comma = numberstring.comma(current_number);
 	
 	console.log('updated number : ' + current_number );
@@ -287,8 +287,7 @@ var countdown = function() {
 			
 				
 			//*******************************************************************
-			//var delay = random(12345678, 98765432);
-			var delay = random(12345678, 98765432);
+			var delay = random(1234567, 76543210);
 			//console.log('delay : ' + delay );
 			console.log('delay hours : ' + delay / 3600000 );
 			
