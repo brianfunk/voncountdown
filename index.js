@@ -49,6 +49,9 @@ var pg = require('pg');
 var twitter = require('twitter');
 var numberstring = require('numberstring');
 var async = require('async');
+var express = require('express');
+var exphbs  = require('express-handlebars');
+var request = require('request');
 
 require('dotenv').config();
 
@@ -60,6 +63,10 @@ var TWITTER_ACCESS_TOKEN_KEY = process.env.TWITTER_ACCESS_TOKEN_KEY;
 var TWITTER_ACCESS_TOKEN_SECRET = process.env.TWITTER_ACCESS_TOKEN_SECRET;
 
 var DATABASE_URL = process.env.DATABASE_URL;
+
+var PORT = process.env.PORT || 12345;
+
+//*******************************************************************
 
 var current_number;
 var current_string;
@@ -82,10 +89,17 @@ client.query('SELECT number FROM number ORDER BY number LIMIT 1', function(err, 
 		return console.error('error running query', err);
 	}
 	else {
-		current_number = result.rows[0].number;		
+		current_number = result.rows[0].number;	
+				
+		current_comma = numberstring.comma(current_number);
+		current_string = numberstring(parseInt(current_number), {'cap': 'title', 'punc': '!'});
+		
 		console.log('load number : ' + current_number );
+		console.log('load string : ' + current_string );
+		console.log('load commma : ' + current_comma );
 		
 		countdown();
+		
 	}	
 });	
 
@@ -139,7 +153,11 @@ var short_phrase = [
 	'I love counting whatever the amount!!',	
 	'When I\'m alone, I count myself!!',	
 	'Greetings!!',	
-	'Counting is fun!!',	
+	'Counting is fun!!',
+	'I vant to count your numbers!!',
+	'I love big numbers and I cannot lie!!',
+	'Sometimes I just count away!!',
+	'Numbers are useful!!',
 	'I love to count things!!'
 ];
 
@@ -216,7 +234,6 @@ var countdown = function() {
 
 				console.log('current_twext : ' + current_twext );				
 				
-								
 				twlient.post('statuses/update', {status: current_twext},  function(error, tweet, response) {
 					
 					if (error) {						
@@ -301,7 +318,30 @@ var countdown = function() {
 
 
 //*******************************************************************
+var app = express();
+ 
+app.engine('handlebars', exphbs({defaultLayout: 'main'}));
+app.set('view engine', 'handlebars');
 
+app.use(express.static('public'));
+ 
+app.get('/', function (req, res) {
+	res.render('home', {
+		current_number: current_number,
+		current_string: current_string,
+		current_comma: current_comma
+	});
+});
+
+
+
+app.get('/badge', function(req,res) {
+	var badge_url = 'https://img.shields.io/badge/Von%20Countdown-'+ encodeURIComponent(current_comma) +'-a26d9e.svg';
+	//console.log('badge_url : ' + badge_url );
+	request(badge_url).pipe(res);
+});
+ 
+app.listen(PORT);
 
 //*******************************************************************
 
