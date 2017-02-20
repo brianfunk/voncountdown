@@ -1,0 +1,75 @@
+
+<div id="topper" class="parallax">
+	<div id="cur_string">
+		{{current_string}}
+	</div>
+	<div id="badger">
+		<a href="https://github.com/brianfunk/voncountdown"><img src="/badge" /></a>
+	</div>
+</div>
+
+<div id="numberimg">
+</div>
+
+<!--
+<div>
+	current_number: {{current_number}}
+	<br/>
+	current_string: {{current_string}}
+	<br/>
+	current_comma: {{current_comma}}
+</div>
+-->
+
+<section id="twitter">
+	<img src="/img/CountVonCount.jpg" title="Count Von Countdown"/>
+	<div id="tweets">	
+		<a class="twitter-timeline" data-lang="en" data-width="600" data-height="308" data-dnt="true" data-theme="light" href="https://twitter.com/VonCountdown">Tweets by VonCountdown</a> <script async src="//platform.twitter.com/widgets.js" charset="utf-8"></script>
+	</div>
+</section>
+
+<div id="numbercom">
+	{{current_comma}} and counting...
+</div>
+
+<div id="vidpedia">
+
+	<div id="wikiembed">
+		<div>
+			<img src="https://www.wikipedia.org/portal/wikipedia.org/assets/img/Wikipedia_wordmark.png">
+			<a href="https://en.wikipedia.org/wiki/Count_von_Count">View on Wikipedia</a>
+		</div>
+		<iframe src="https://en.m.wikipedia.org/wiki/Count_von_Count"></iframe>
+	</div>
+	
+	<div id="vidlaugh">
+		<iframe width="395" height="220" src="https://www.youtube.com/embed/p3pKcRSmw2w" frameborder="0" allowfullscreen></iframe>
+	</div>
+
+</div>
+
+<div id="botter" class="parallax">
+	<div id="followbtn">
+		<a href="https://twitter.com/VonCountdown" class="twitter-follow-button" data-size="large" data-lang="en" data-dnt="true" data-show-count="false">Follow @VonCountdown</a><script async src="//platform.twitter.com/widgets.js" charset="utf-8"></script>
+	</div>	
+</div>
+
+<script src="https://code.jquery.com/jquery-3.1.1.min.js" integrity="sha256-hVVnYaiADRTO2PzUGmuLJr8BLUSjGIZsDYGmIJLv2b8=" crossorigin="anonymous"></script>
+
+<script>
+function addImg(num) {
+	
+	$('#numberimg').append('<img id="img_'+ num +'" src="/img/cvc_'+ num +'.png" />')
+
+}
+
+var cur_num = ''+ {{current_number}};
+
+for (var i=0; i<cur_num.length; i++) {	
+	addImg(cur_num.charAt(i));
+	console.log(cur_num.charAt(i));
+}
+
+
+
+</script>

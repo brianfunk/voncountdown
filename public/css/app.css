@@ -1,0 +1,124 @@
+html, body {
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    margin: 0;
+}
+
+body { 
+	margin:0 auto; 
+	width: 1040px;
+} 
+
+
+#cur_string {
+	font-family: 'Josefin Slab', serif;
+	font-size: 42px;
+	position: relative;
+	top: 77px;
+	text-align: center;
+	/*text-shadow: #ffffff 2px 2px 1px, #ffffff 0px 0px 10px;*/
+	color: #412c88;
+    background: rgba(255,255,255,.7);
+}
+
+#numbercom {
+	font-family: 'New Rocker', cursive;
+	font-size: 50px;
+	color: #fff;
+	background: #ead6ef linear-gradient(to right, #ffffff, #ead6ef, #ead6ef, #ead6ef, #ffffff);
+	text-align: center;
+	width: 100%;
+	padding: 18px 0px;
+	margin: 32px 0px;
+}
+
+#vidpedia {
+	
+	padding: 30px 0 45px 0;
+	
+}
+
+#vidlaugh {
+	float: right;
+	height: 364px;	
+	width: 610px;	
+}
+#vidlaugh iframe {
+	width: 100%;
+	height: 100%;	
+}
+
+#numberimg {
+	padding: 42px 0px;
+	display: inline-block;
+}
+
+#twitter {
+	padding: 30px 0px;
+}
+
+#tweets {
+	float: right;
+}
+
+#wikiembed {
+	display: inline-block;
+	width: 400px;
+	height: 340px;	
+}
+#wikiembed iframe {
+	border: 0px;
+	width: 100%;
+	height: 100%;	
+}
+
+#wikiembed div img {
+	vertical-align: middle;
+	height: 24px;
+}
+
+#wikiembed div a {
+	font: normal normal 12px/1.4 Helvetica,Roboto,"Segoe UI",Calibri,sans-serif;
+    color: #3b94d9;
+    text-decoration: none;
+    outline: 0;
+	float: right;
+}
+#wikiembed div a:hover {
+	font: normal normal 12px/1.4 Helvetica,Roboto,"Segoe UI",Calibri,sans-serif;
+    color: #55acee;
+    text-decoration: none;
+    outline: 0;	
+}
+
+#followbtn {
+	position: relative;
+	top: 50%;
+	float: left;
+}
+
+#badger {
+	position: relative;
+	top: 50%;
+	float: right;
+}
+
+.parallax { 
+    background-attachment: fixed;    
+    background-repeat: no-repeat;
+    /*background-size: cover;*/
+}
+
+#topper {
+	background-image: url('/img/VonCountdown_1050clear.png');
+	height: 321px;
+	background-position: top;
+}
+
+#botter {
+	background-image: url('/img/VonCountup_1050clear.png');
+	height: 321px;
+	background-position: bottom;
+}
+

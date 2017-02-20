@@ -1,0 +1,45 @@
+{
+  "name": "voncountdown",
+  "version": "0.0.1",
+  "description": "Count Von Countdown",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/brianfunk/voncountdown.git"
+  },
+  "keywords": [
+    "count",
+    "von",
+    "countdown",
+    "numberstring",
+    "number",
+    "string",
+    "count",
+    "von",
+    "count",
+    "sesame",
+    "street",
+    "big",
+    "bird"
+  ],
+  "author": "Brian Funk",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/brianfunk/voncountdown/issues"
+  },
+  "homepage": "https://github.com/brianfunk/voncountdown#readme",
+  "dependencies": {
+    "async": "^2.0.1",
+    "dotenv": "^2.0.0",
+    "express": "^4.14.0",
+    "express-handlebars": "^3.0.0",
+    "numberstring": "^0.2.0",
+    "pg": "6.1.0",
+    "request": "^2.75.0",
+    "twitter": "^1.4.0"
+  }
+}
