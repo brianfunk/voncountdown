@@ -72,10 +72,10 @@ const PORT = process.env.PORT || 12345;
 
 //*******************************************************************
 
-console.log('Twitter API Key:', process.env.TWITTER_API_KEY);
-console.log('Twitter API Secret:', process.env.TWITTER_API_SECRET);
-console.log('Twitter Access Token:', process.env.TWITTER_ACCESS_TOKEN);
-console.log('Twitter Access Token Secret:', process.env.TWITTER_ACCESS_TOKEN_SECRET);
+// console.log('Twitter API Key:', process.env.TWITTER_API_KEY);
+// console.log('Twitter API Secret:', process.env.TWITTER_API_SECRET);
+// console.log('Twitter Access Token:', process.env.TWITTER_ACCESS_TOKEN);
+// console.log('Twitter Access Token Secret:', process.env.TWITTER_ACCESS_TOKEN_SECRET);
 
 // Initialize Twitter API v2 client with OAuth 2.0 User Context authentication
 const twitterClient = new TwitterApi({
@@ -153,7 +153,7 @@ let current_twext;
 var random = function(min, max) {
 	
 	var rand = Math.floor(Math.random() * (max - min + 1)) + min;	
-	//console.log('rand : ' + rand );
+	console.log('rand : ' + rand );
 	
 	return rand;	
 }
@@ -281,7 +281,7 @@ var countdown = function() {
 			},
 			function(callback){
 				//*******************************************************************
-				console.log('updatenumber ' );				
+				console.log('update number');				
 
 				(async () => {
 					// Insert a record with new number
