@@ -45,7 +45,6 @@
 
 //*******************************************************************
 
-const twitter = require('twitter');
 const numberstring = require('numberstring');
 const async = require('async');
 const express = require('express');
