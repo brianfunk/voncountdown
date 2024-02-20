@@ -45,79 +45,115 @@
 
 //*******************************************************************
 
-var pg = require('pg');
-var twitter = require('twitter');
-var numberstring = require('numberstring');
-var async = require('async');
-var express = require('express');
-var exphbs  = require('express-handlebars');
-var request = require('request');
+const twitter = require('twitter');
+const numberstring = require('numberstring');
+const async = require('async');
+const express = require('express');
+const exphbs = require('express-handlebars');
+const request = require('request');
+const AWS = require('aws-sdk');
+const { TwitterApi } = require('twitter-api-v2');
 
 require('dotenv').config();
 
 //*******************************************************************
 
-var TWITTER_CONSUMER_KEY = process.env.TWITTER_CONSUMER_KEY;
-var TWITTER_CONSUMER_SECRET = process.env.TWITTER_CONSUMER_SECRET;
-var TWITTER_ACCESS_TOKEN_KEY = process.env.TWITTER_ACCESS_TOKEN_KEY;
-var TWITTER_ACCESS_TOKEN_SECRET = process.env.TWITTER_ACCESS_TOKEN_SECRET;
-
-var DATABASE_URL = process.env.DATABASE_URL;
-
-var PORT = process.env.PORT || 12345;
-
-//*******************************************************************
-
-var current_number;
-var current_string;
-var current_comma;
-var current_twext;
-
-//*******************************************************************
-
-pg.defaults.ssl = true;
-
-var client = new pg.Client(DATABASE_URL);
-
-client.connect(function (err) {
-	if (err) throw err;	
+AWS.config.update({
+	accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+	secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+	region: 'us-east-1', // specify your AWS region
 });
 
-client.query('SELECT number FROM number ORDER BY number LIMIT 1', function(err, result) {
-		
-	if (err) {
-		return console.error('error running query', err);
+// const dynamoDB = new AWS.DynamoDB.DocumentClient();
+const docClient = new AWS.DynamoDB.DocumentClient();
+
+//*******************************************************************
+
+const PORT = process.env.PORT || 12345;
+
+//*******************************************************************
+
+console.log('Twitter API Key:', process.env.TWITTER_API_KEY);
+console.log('Twitter API Secret:', process.env.TWITTER_API_SECRET);
+console.log('Twitter Access Token:', process.env.TWITTER_ACCESS_TOKEN);
+console.log('Twitter Access Token Secret:', process.env.TWITTER_ACCESS_TOKEN_SECRET);
+
+// Initialize Twitter API v2 client with OAuth 2.0 User Context authentication
+const twitterClient = new TwitterApi({
+	appKey: process.env.TWITTER_API_KEY,
+	appSecret: process.env.TWITTER_API_SECRET,
+	accessToken: process.env.TWITTER_ACCESS_TOKEN,
+	accessSecret: process.env.TWITTER_ACCESS_TOKEN_SECRET,
+});
+
+//*******************************************************************
+
+let current_record;
+let current_number;
+let current_string;
+let current_comma;
+let current_twext;
+
+//*******************************************************************
+
+(async () => {
+	try {
+
+		const params = {
+			TableName: 'voncountdown',
+		};
+
+		const data = await docClient.scan(params).promise();
+
+		console.log('data : ' + JSON.stringify(data) );
+
+		if (data.Items.length === 0) {
+			console.log('no items found in the table');
+
+			current_number = 1111373357579;
+			current_comma = numberstring.comma(current_number);
+			current_string = numberstring(current_number, { cap: 'title', punc: '!' });
+
+			// Insert a record if no items are found
+			const insertParams = {
+				TableName: 'voncountdown',
+				Item: {
+					number: current_number,
+					string: current_string,
+					datetime: new Date().toISOString(),
+					status: true,
+				},
+			};
+
+			await docClient.put(insertParams).promise();
+
+			console.log('inserted new record : ' + current_number);
+
+		} else {
+
+			const lowest_number = data.Items.sort((a, b) => a.number - b.number)[0];
+			console.log('lowest_number : ' + JSON.stringify(lowest_number));
+
+			current_number = lowest_number.number;
+			current_comma = numberstring.comma(current_number);
+			current_string = numberstring(parseInt(current_number), {'cap': 'title', 'punc': '!'});
+
+			console.log('load number : ' + current_number);
+			console.log('load string : ' + current_string );
+			console.log('load commma : ' + current_comma );
+
+			countdown();
+		}
+	} catch (error) {
+		console.error(error.message);
 	}
-	else {
-		current_number = result.rows[0].number;	
-				
-		current_comma = numberstring.comma(current_number);
-		current_string = numberstring(parseInt(current_number), {'cap': 'title', 'punc': '!'});
-		
-		console.log('load number : ' + current_number );
-		console.log('load string : ' + current_string );
-		console.log('load commma : ' + current_comma );
-		
-		countdown();
-		
-	}	
-});	
-
-//*******************************************************************
-
-var twlient = new twitter({
-	consumer_key: TWITTER_CONSUMER_KEY,
-	consumer_secret: TWITTER_CONSUMER_SECRET,
-	access_token_key: TWITTER_ACCESS_TOKEN_KEY,
-	access_token_secret: TWITTER_ACCESS_TOKEN_SECRET
-});
+})();
 
 //*******************************************************************
 
 var random = function(min, max) {
 	
 	var rand = Math.floor(Math.random() * (max - min + 1)) + min;	
-	
 	//console.log('rand : ' + rand );
 	
 	return rand;	
@@ -210,14 +246,14 @@ var countdown = function() {
 	current_comma = numberstring.comma(current_number);
 	
 	console.log('updated number : ' + current_number );
-	//console.log('updated string : ' + current_string );
-	//console.log('updated comma : ' + current_comma );
+	console.log('updated string : ' + current_string );
+	console.log('updated comma : ' + current_comma );
 	
 	async.series(
 		[
 			function(callback){
 				//*******************************************************************
-				//console.log('tweetdown ' );
+				console.log('tweetdown ' );
 				
 				current_twext = current_string;
 				
@@ -226,52 +262,48 @@ var countdown = function() {
 					var twext_phrase = short_phrase[random(0,short_phrase.length-1)];
 					var twext_tag = short_tags[random(0,short_tags.length-1)];
 					
-					//console.log('twext_phrase : ' + twext_phrase );
-					//console.log('twext_tag : ' + twext_tag );	
+					console.log('twext_phrase : ' + twext_phrase );
+					console.log('twext_tag : ' + twext_tag );	
 
 					current_twext = current_comma +'! '+ twext_phrase + ' '+ twext_tag;
 				}		
 
-				console.log('current_twext : ' + current_twext );				
+				console.log('current_twext : ' + current_twext );	
 				
-				twlient.post('statuses/update', {status: current_twext},  function(error, tweet, response) {
-					
-					if (error) {						
-						current_number++;
-						
-						callback(error);						
-						
-						throw error;
-					}
-					else {
-						//console.log(tweet);  // Tweet body. 
-						//console.log(response);  // Raw response object. 
-						
-						callback(null, current_twext);
-					}	
-					
-				});
-							
 				
-				//callback(null, current_twext);
+				(async () => {
+					let tweet = await twitterClient.v2.tweet(current_twext);
+
+					console.log('tweet posted : ', tweet);
+
+					callback(null, current_twext);
+				})();
+				
 			},
 			function(callback){
 				//*******************************************************************
-				//console.log('updatenumber ' );	
-	
-				client.query('UPDATE number SET number = $1', [current_number], function(err, result) {
-					
-					if (err) {
-						callback(err);
-						
-						//return console.error('error running query', err);
-					}
-					else {	
-						//console.log('update : ' + JSON.stringify(result) );		
-						
-						callback();
-					}	
-				});					
+				console.log('updatenumber ' );				
+
+				(async () => {
+					// Insert a record with new number
+					const insertParams = {
+						TableName: 'voncountdown',
+						Item: {
+							number: current_number,
+							string: current_string,
+							datetime: new Date().toISOString(),
+							status: true,
+						},
+					};
+
+					await docClient.put(insertParams).promise();
+
+					console.log('inserted new record : ' + current_number);
+
+					callback();
+
+				})();
+
 			}
 		],
 		function(err, results){
@@ -280,34 +312,17 @@ var countdown = function() {
 			
 			if (err) {				
 				result_status = 'error';
-				console.error('countdown series error');
+				console.error('countdown series error : ' + JSON.stringify(err));
 			}
 			
-			//console.log('update results: ' + JSON.stringify(results) );
+			console.log('update results : ' + JSON.stringify(results) );
 			
 			//*******************************************************************
-			var current_date = new Date();
-			//console.log('current_date : ' + current_date );
-			
-			client.query('INSERT INTO logs (number, string, datetime, status) VALUES ($1, $2, $3, $4)', [current_number, current_twext, current_date, result_status], function(err, result) {
-					
-				if (err) {
-					//callback(err);
-					
-					return console.error('error running query', err);
-				}
-				else {	
-					//console.log('update : ' + JSON.stringify(result) );					
-	
-				}	
-			});							
-			
-				
-			//*******************************************************************
-			var delay = random(1234567, 76543210);
-			//console.log('delay : ' + delay );
+
+			var delay = random(1234567, 7654321);
+			console.log('delay : ' + delay );
 			console.log('delay hours : ' + delay / 3600000 );
-			
+
 			setTimeout(function() {
 				countdown();
 			}, delay);	
@@ -316,8 +331,8 @@ var countdown = function() {
 	);
 };
 
-
 //*******************************************************************
+
 var app = express();
  
 app.engine('handlebars', exphbs({defaultLayout: 'main'}));
@@ -332,8 +347,6 @@ app.get('/', function (req, res) {
 		current_comma: current_comma
 	});
 });
-
-
 
 app.get('/badge', function(req,res) {
 	var badge_url = 'https://img.shields.io/badge/Von%20Countdown-'+ encodeURIComponent(current_comma) +'-a26d9e.svg';
