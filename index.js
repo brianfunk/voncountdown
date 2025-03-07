@@ -63,7 +63,7 @@ AWS.config.update({
 	region: 'us-east-1', // specify your AWS region
 });
 
-// const dynamoDB = new AWS.DynamoDB.DocumentClient();
+ 
 const docClient = new AWS.DynamoDB.DocumentClient();
 
 //*******************************************************************
@@ -72,10 +72,7 @@ const PORT = process.env.PORT || 12345;
 
 //*******************************************************************
 
-// console.log('Twitter API Key:', process.env.TWITTER_API_KEY);
-// console.log('Twitter API Secret:', process.env.TWITTER_API_SECRET);
-// console.log('Twitter Access Token:', process.env.TWITTER_ACCESS_TOKEN);
-// console.log('Twitter Access Token Secret:', process.env.TWITTER_ACCESS_TOKEN_SECRET);
+ 
 
 // Initialize Twitter API v2 client with OAuth 2.0 User Context authentication
 const twitterClient = new TwitterApi({
@@ -87,7 +84,6 @@ const twitterClient = new TwitterApi({
 
 //*******************************************************************
 
-let current_record;
 let current_number;
 let current_string;
 let current_comma;
@@ -98,6 +94,7 @@ let current_twext;
 (async () => {
 	try {
 
+		// Initialize the countdown from the lowest existing number in DynamoDB, or start fresh if no record exists.
 		const params = {
 			TableName: 'voncountdown',
 		};
@@ -150,6 +147,7 @@ let current_twext;
 
 //*******************************************************************
 
+// Generates a random integer between a specified minimum and maximum value, inclusive.
 var random = function(min, max) {
 	
 	var rand = Math.floor(Math.random() * (max - min + 1)) + min;	
@@ -160,6 +158,7 @@ var random = function(min, max) {
 
 //*******************************************************************
 
+// Phrases for adding random humorous or engaging variety to tweets.
 var short_phrase = [
 	'Ha ha ha!!',
 	'Ah ah ah!!',
@@ -196,6 +195,7 @@ var short_phrase = [
 	'I love to count things!!'
 ];
 
+// List of random short tags used for Twitter posts
 var short_tags = [
 	'@CountVonCount',
 	'@CountVonCount',
@@ -237,7 +237,8 @@ var short_tags = [
 //*******************************************************************
 
 var countdown = function() {	
-	
+	// Main function that decrements the current number, tweets the new count, 
+	// updates the record in DynamoDB, and schedules the next countdown.
 	console.log('countdown start ' );
 	
 	current_number--;	
@@ -251,7 +252,7 @@ var countdown = function() {
 	async.series(
 		[
 			function(callback){
-				//*******************************************************************
+				// Step 1: Post a tweet with the current count
 				console.log('tweetdown ' );
 				
 				current_twext = current_string;
@@ -271,6 +272,7 @@ var countdown = function() {
 				
 				
 				(async () => {
+					// Send the tweet
 					let tweet = await twitterClient.v2.tweet(current_twext);
 
 					console.log('tweet posted : ', tweet);
@@ -280,7 +282,7 @@ var countdown = function() {
 				
 			},
 			function(callback){
-				//*******************************************************************
+				// Step 2: Update the DynamoDB record with the new number
 				console.log('update number');				
 
 				(async () => {
@@ -356,4 +358,3 @@ app.get('/badge', function(req,res) {
 app.listen(PORT);
 
 //*******************************************************************
-
