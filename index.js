@@ -737,7 +737,14 @@ app.use(helmet({
 			defaultSrc: ["'self'"],
 			scriptSrc: [
 				"'self'",
-				"'sha256-QJVoVswsd9o99Vg11t+c0fQeJD0p1YfKwOQdoYT0h7E='", // Inline script hash
+				"'unsafe-inline'", // Allow inline scripts (required for template)
+				'https://platform.twitter.com',
+				'https://code.jquery.com',
+				'https://static.cloudflareinsights.com'
+			],
+			scriptSrcElem: [
+				"'self'",
+				"'unsafe-inline'", // Allow inline script elements
 				'https://platform.twitter.com',
 				'https://code.jquery.com',
 				'https://static.cloudflareinsights.com'
@@ -755,12 +762,15 @@ app.use(helmet({
 				"'self'",
 				'data:',
 				'https://www.wikipedia.org',
+				'https://en.wikipedia.org',
+				'https://en.m.wikipedia.org',
 				'https://img.shields.io'
 			],
 			frameSrc: [
 				"'self'",
 				'https://en.m.wikipedia.org',
 				'https://www.youtube.com',
+				'https://youtube.com',
 				'https://platform.twitter.com'
 			],
 			connectSrc: [
