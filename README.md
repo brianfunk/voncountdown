@@ -64,8 +64,6 @@ TWITTER_API_SECRET=your_twitter_api_secret
 TWITTER_ACCESS_TOKEN=your_twitter_access_token
 TWITTER_ACCESS_TOKEN_SECRET=your_twitter_access_token_secret
 
-# Optional: Logging
-LOG_LEVEL=info
 ```
 
 5. Create DynamoDB table:
@@ -122,13 +120,39 @@ npm run test:coverage
 
 See `tests/README.md` for testing guide.
 
+### Logging
+
+The application uses simple console logging (stdout/stderr) for compatibility with AWS App Runner and CloudWatch Logs.
+
+**Log Levels:**
+- `[INFO]` - General information and flow tracking
+- `[DEBUG]` - Detailed debugging information
+- `[WARN]` - Warnings and non-critical issues
+- `[ERROR]` - Errors and exceptions
+
+**Log Format:**
+```
+[INFO] [2026-01-13T16:30:00.000Z] Message {"key":"value"}
+```
+
+**Features:**
+- Automatic sanitization of sensitive data (credentials, tokens, keys)
+- Timestamped logs for easy debugging
+- Structured JSON data for parsing
+- Extensive logging throughout countdown flow, Twitter API calls, and DynamoDB operations
+
+**Viewing Logs:**
+- **Local:** Logs appear in console when running `npm start` or `npm run dev`
+- **AWS App Runner:** View logs in CloudWatch Logs console
+- **Heroku:** View logs with `heroku logs --tail`
+
 ## Architecture
 
 The application consists of:
 - **Express.js** web server
 - **DynamoDB** for persistent storage of countdown state
 - **Twitter API v2** for posting tweets
-- **Winston** for structured logging
+- **Console logging** (stdout/stderr) for CloudWatch compatibility
 - **Node-cache** for in-memory caching
 - **Handlebars** for server-side templating
 
@@ -161,7 +185,6 @@ The application consists of:
 | `DYNAMODB_TABLE` | DynamoDB table name | `voncountdown` |
 | `PORT` | Server port | `8080` |
 | `NODE_ENV` | Environment | `development` |
-| `LOG_LEVEL` | Logging level | `info` |
 | `TWITTER_API_KEY` | Twitter API key | Required |
 | `TWITTER_API_SECRET` | Twitter API secret | Required |
 | `TWITTER_ACCESS_TOKEN` | Twitter access token | Required |
@@ -169,14 +192,38 @@ The application consists of:
 
 ## Security
 
-- Helmet.js for security headers
-- Rate limiting (100 req/15min per IP, 60 req/min for health endpoint)
-- Input validation and sanitization
-- XSS protection in templates
-- Environment variable validation
-- Request timeout handling (30 seconds)
+- **Helmet.js** for security headers with Content Security Policy (CSP)
+- **CSP** configured to allow external resources (Twitter widgets, jQuery, Wikipedia, YouTube)
+- **Rate limiting** (100 req/15min per IP, 60 req/min for health endpoint)
+- **Input validation and sanitization**
+- **XSS protection** in templates
+- **Environment variable validation**
+- **Request timeout handling** (30 seconds)
+- **Log sanitization** to prevent credential leakage
 
 ## Deployment
+
+### AWS App Runner
+
+1. Create App Runner service
+2. Connect to GitHub repository
+3. Set environment variables in App Runner console:
+   - `AWS_ACCESS_KEY_ID`
+   - `AWS_SECRET_ACCESS_KEY`
+   - `AWS_REGION`
+   - `DYNAMODB_TABLE`
+   - `TWITTER_API_KEY`
+   - `TWITTER_API_SECRET`
+   - `TWITTER_ACCESS_TOKEN`
+   - `TWITTER_ACCESS_TOKEN_SECRET`
+   - `NODE_ENV=production`
+   - `PORT=8080`
+4. App Runner automatically:
+   - Builds and deploys on push to main branch
+   - Streams logs to CloudWatch Logs
+   - Handles scaling and health checks
+
+**Logging:** All logs go to stdout/stderr and are automatically captured by CloudWatch Logs. Use AWS Console to view logs.
 
 ### Heroku
 

@@ -56,92 +56,33 @@ const axios = require('axios');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, ScanCommand, PutCommand } = require('@aws-sdk/lib-dynamodb');
 const { TwitterApi } = require('twitter-api-v2');
-const winston = require('winston');
 const NodeCache = require('node-cache');
 
 require('dotenv').config();
 
 //*******************************************************************
-// Logger Setup
-//*******************************************************************
-
-// Security: Filter to prevent logging sensitive data
-const sensitiveDataFilter = winston.format((info) => {
-	const sensitiveKeys = ['password', 'secret', 'key', 'token', 'credential', 'accessKey', 'secretAccessKey'];
-	
-	if (info.message && typeof info.message === 'object') {
-		const sanitized = {};
-		for (const [key, value] of Object.entries(info.message)) {
-			const lowerKey = key.toLowerCase();
-			if (sensitiveKeys.some(sensitive => lowerKey.includes(sensitive))) {
-				sanitized[key] = '[REDACTED]';
-			} else {
-				sanitized[key] = value;
-			}
-		}
-		info.message = sanitized;
-	}
-	
-	return info;
-});
-
-const logger = winston.createLogger({
-	level: process.env.LOG_LEVEL || 'info',
-	format: winston.format.combine(
-		sensitiveDataFilter(),
-		winston.format.timestamp(),
-		winston.format.errors({ stack: true }),
-		winston.format.json()
-	),
-	defaultMeta: { service: 'voncountdown' },
-	transports: [
-		new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
-		new winston.transports.File({ filename: 'logs/combined.log' })
-	]
-});
-
-// Add console transport in development
-if (process.env.NODE_ENV !== 'production') {
-	logger.add(new winston.transports.Console({
-		format: winston.format.combine(
-			winston.format.colorize(),
-			winston.format.simple()
-		)
-	}));
-}
-
-//*******************************************************************
-// Security: Log Sanitization
+// Simple Logger for App Runner/CloudWatch
+// App Runner automatically captures stdout/stderr to CloudWatch Logs
 //*******************************************************************
 
 /**
- * Sanitizes error objects to prevent logging sensitive data
- * @param {*} error - Error object or value to sanitize
- * @returns {Object} Sanitized error object
+ * Sanitizes data to prevent logging sensitive information
+ * @param {*} data - Data to sanitize
+ * @returns {*} Sanitized data
  */
-function sanitizeError(error) {
-	if (!error) return null;
+function sanitizeData(data) {
+	if (!data) return data;
 	
 	const sensitiveKeys = ['password', 'secret', 'key', 'token', 'credential', 'accessKey', 'secretAccessKey', 'authorization'];
-	const sanitized = {};
 	
-	// Handle Error objects
-	if (error instanceof Error) {
-		sanitized.message = error.message;
-		sanitized.name = error.name;
-		sanitized.stack = error.stack;
-		return sanitized;
-	}
-	
-	// Handle objects
-	if (typeof error === 'object') {
-		for (const [key, value] of Object.entries(error)) {
-			const lowerKey = key.toLowerCase();
-			// Check if key contains sensitive terms
+	if (typeof data === 'object') {
+		const sanitized = Array.isArray(data) ? [] : {};
+		for (const [key, value] of Object.entries(data)) {
+			const lowerKey = String(key).toLowerCase();
 			if (sensitiveKeys.some(sensitive => lowerKey.includes(sensitive))) {
 				sanitized[key] = '[REDACTED]';
 			} else if (typeof value === 'object' && value !== null) {
-				sanitized[key] = sanitizeError(value);
+				sanitized[key] = sanitizeData(value);
 			} else {
 				sanitized[key] = value;
 			}
@@ -149,18 +90,54 @@ function sanitizeError(error) {
 		return sanitized;
 	}
 	
-	// Handle primitives
-	return String(error);
+	return data;
 }
+
+/**
+ * Simple logger that uses console.log/error for App Runner/CloudWatch compatibility
+ * All logs go to stdout/stderr which App Runner automatically captures
+ */
+const logger = {
+	info: (message, data) => {
+		const timestamp = new Date().toISOString();
+		if (data) {
+			console.log(`[INFO] [${timestamp}] ${message}`, JSON.stringify(sanitizeData(data)));
+		} else {
+			console.log(`[INFO] [${timestamp}] ${message}`);
+		}
+	},
+	error: (message, data) => {
+		const timestamp = new Date().toISOString();
+		if (data) {
+			console.error(`[ERROR] [${timestamp}] ${message}`, JSON.stringify(sanitizeData(data)));
+		} else {
+			console.error(`[ERROR] [${timestamp}] ${message}`);
+		}
+	},
+	warn: (message, data) => {
+		const timestamp = new Date().toISOString();
+		if (data) {
+			console.warn(`[WARN] [${timestamp}] ${message}`, JSON.stringify(sanitizeData(data)));
+		} else {
+			console.warn(`[WARN] [${timestamp}] ${message}`);
+		}
+	},
+	debug: (message, data) => {
+		const timestamp = new Date().toISOString();
+		if (data) {
+			console.log(`[DEBUG] [${timestamp}] ${message}`, JSON.stringify(sanitizeData(data)));
+		} else {
+			console.log(`[DEBUG] [${timestamp}] ${message}`);
+		}
+	}
+};
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
-	const sanitizedReason = sanitizeError(reason);
-	logger.error('Unhandled Rejection', { 
-		error: sanitizedReason?.message || String(sanitizedReason),
-		stack: sanitizedReason?.stack,
-		name: sanitizedReason?.name
-	});
+	const errorInfo = reason instanceof Error 
+		? { message: reason.message, name: reason.name, stack: reason.stack }
+		: { reason: String(reason) };
+	logger.error('Unhandled Promise Rejection', sanitizeData(errorInfo));
 	// Don't exit - allow server to continue running
 });
 
@@ -208,6 +185,9 @@ const requiredEnvVars = [
 	'TWITTER_ACCESS_TOKEN_SECRET',
 ];
 
+logger.info('Starting application initialization');
+logger.info('Environment check', { nodeEnv: process.env.NODE_ENV, port: CONFIG.APP.PORT });
+
 requiredEnvVars.forEach(varName => {
 	if (!process.env[varName]) {
 		logger.error(`Missing required environment variable: ${varName}`);
@@ -215,9 +195,16 @@ requiredEnvVars.forEach(varName => {
 	}
 });
 
+logger.info('All required environment variables present');
+
 //*******************************************************************
 // AWS DynamoDB Client Setup
 //*******************************************************************
+
+logger.info('Initializing AWS DynamoDB client', { 
+	region: CONFIG.AWS.REGION, 
+	tableName: CONFIG.AWS.TABLE_NAME 
+});
 
 const client = new DynamoDBClient({
 	region: CONFIG.AWS.REGION,
@@ -230,26 +217,31 @@ const client = new DynamoDBClient({
 });
 
 const docClient = DynamoDBDocumentClient.from(client);
+logger.info('DynamoDB client initialized successfully');
 
 //*******************************************************************
 // Twitter API Client Setup
 //*******************************************************************
 
+logger.info('Initializing Twitter API client');
 const twitterClient = new TwitterApi({
 	appKey: process.env.TWITTER_API_KEY,
 	appSecret: process.env.TWITTER_API_SECRET,
 	accessToken: process.env.TWITTER_ACCESS_TOKEN,
 	accessSecret: process.env.TWITTER_ACCESS_TOKEN_SECRET,
 });
+logger.info('Twitter API client initialized successfully');
 
 //*******************************************************************
 // Caching Layer
 //*******************************************************************
 
+logger.info('Initializing cache', { ttl: CONFIG.CACHE.TTL });
 const cache = new NodeCache({ 
 	stdTTL: CONFIG.CACHE.TTL,
 	checkperiod: CONFIG.CACHE.TTL * 2 // Check for expired keys
 });
+logger.info('Cache initialized');
 
 //*******************************************************************
 // Application State
@@ -271,9 +263,11 @@ const { randomInt } = require('./src/utils/random');
 //*******************************************************************
 
 (async () => {
+	logger.info('=== INITIALIZATION START ===');
 	try {
 		// Initialize the countdown from the lowest existing number in DynamoDB, 
 		// or start fresh if no record exists.
+		logger.info('Checking cache for existing countdown state');
 		const params = {
 			TableName: CONFIG.AWS.TABLE_NAME,
 		};
@@ -281,6 +275,7 @@ const { randomInt } = require('./src/utils/random');
 		// Check cache first to avoid expensive scan operation
 		const cachedState = cache.get('countdown_state');
 		if (cachedState) {
+			logger.info('=== USING CACHED STATE ===');
 			logger.info('Using cached countdown state');
 			current_number = cachedState.number;
 			current_comma = cachedState.comma;
@@ -290,22 +285,35 @@ const { randomInt } = require('./src/utils/random');
 				string: current_string, 
 				comma: current_comma 
 			});
+			logger.info('Starting countdown from cached state');
 			countdown();
 			return;
 		}
 
 		// If not in cache, scan DynamoDB (expensive operation)
 		// TODO: Optimize by using Query with GSI or storing current number separately
+		logger.info('=== SCANNING DYNAMODB ===');
+		logger.info('Scanning DynamoDB table', { tableName: CONFIG.AWS.TABLE_NAME });
 		const data = await docClient.send(new ScanCommand(params));
 
+		logger.info('=== DYNAMODB SCAN COMPLETE ===');
 		logger.info('DynamoDB scan result', { itemCount: data.Items.length });
 
 		if (data.Items.length === 0) {
-			logger.info('No items found in table, initializing with start number');
+			logger.info('=== NO ITEMS FOUND - INITIALIZING WITH START NUMBER ===');
+			logger.info('No items found in table, initializing with start number', { 
+				startNumber: CONFIG.APP.START_NUMBER 
+			});
 
 			current_number = CONFIG.APP.START_NUMBER;
 			current_comma = numberstring.comma(current_number);
 			current_string = numberstring(current_number, { cap: 'title', punc: '!' });
+
+			logger.info('Generated initial state', { 
+				number: current_number, 
+				comma: current_comma, 
+				string: current_string 
+			});
 
 			// Insert a record if no items are found
 			const insertParams = {
@@ -318,17 +326,25 @@ const { randomInt } = require('./src/utils/random');
 				},
 			};
 
+			logger.info('Inserting initial record into DynamoDB');
 			await docClient.send(new PutCommand(insertParams));
 
+			logger.info('=== INITIAL RECORD INSERTED ===');
 			logger.info('Inserted new record', { number: current_number });
 
 		} else {
+			logger.info('=== LOADING EXISTING STATE ===');
+			logger.info('Found existing items', { itemCount: data.Items.length });
 			const lowest_number = data.Items.sort((a, b) => a.number - b.number)[0];
 			logger.info('Lowest number found', { number: lowest_number.number });
 
 			// Validate number format from DynamoDB
 			const number = parseInt(lowest_number.number);
 			if (isNaN(number) || !isFinite(number)) {
+				logger.error('Invalid number format in DynamoDB', { 
+					rawValue: lowest_number.number,
+					parsedValue: number
+				});
 				throw new Error('Invalid number format in DynamoDB: ' + lowest_number.number);
 			}
 
@@ -336,23 +352,39 @@ const { randomInt } = require('./src/utils/random');
 			current_comma = numberstring.comma(current_number);
 			current_string = numberstring(current_number, { 'cap': 'title', 'punc': '!' });
 
+			logger.info('Generated state from DynamoDB', { 
+				number: current_number, 
+				comma: current_comma, 
+				string: current_string 
+			});
+
 			// Cache the state
+			logger.debug('Caching state');
 			cache.set('countdown_state', {
 				number: current_number,
 				comma: current_comma,
 				string: current_string
 			});
 
+			logger.info('=== STATE LOADED AND CACHED ===');
 			logger.info('Loaded countdown state', { 
 				number: current_number, 
 				string: current_string, 
 				comma: current_comma 
 			});
 
+			logger.info('Starting countdown from loaded state');
 			countdown();
 		}
+		logger.info('=== INITIALIZATION COMPLETE ===');
 	} catch (error) {
-		logger.error('Initialization error', { error: error.message, stack: error.stack });
+		logger.error('=== INITIALIZATION ERROR ===');
+		logger.error('Initialization error', { 
+			error: error.message, 
+			stack: error.stack,
+			name: error.name,
+			code: error.code
+		});
 		logger.warn('Continuing without DynamoDB connection. Web server will still run.');
 		// Don't exit - allow web server to run even if DynamoDB fails
 	}
@@ -462,7 +494,12 @@ const short_tags = [
  * @returns {Promise<void>}
  */
 async function countdown() {
-	logger.info('Countdown start');
+	logger.info('=== COUNTDOWN FUNCTION START ===');
+	logger.info('Current state before decrement', { 
+		current_number, 
+		current_string, 
+		current_comma 
+	});
 
 	// Validate current_number exists and is valid
 	if (current_number === undefined || current_number === null) {
@@ -477,6 +514,7 @@ async function countdown() {
 		return;
 	}
 
+	logger.info('Decrementing number', { from: current_number, to: current_number - 1 });
 	current_number--;
 	current_string = numberstring(current_number, { 'cap': 'title', 'punc': '!' });
 	current_comma = numberstring.comma(current_number);
@@ -489,16 +527,25 @@ async function countdown() {
 
 	try {
 		// Step 1: Post a tweet with the current count
+		logger.info('=== PREPARING TWEET ===');
 		logger.debug('Preparing tweet');
 
 		current_twext = current_string;
+		logger.debug('Base tweet text', { text: current_twext, length: current_twext.length });
 
 		// Randomly add phrase and tag (1 in 5 chance)
-		if (randomInt(0, CONFIG.COUNTDOWN.PHRASE_PROBABILITY) === CONFIG.COUNTDOWN.PHRASE_PROBABILITY) {
+		const shouldAddPhrase = randomInt(0, CONFIG.COUNTDOWN.PHRASE_PROBABILITY) === CONFIG.COUNTDOWN.PHRASE_PROBABILITY;
+		logger.debug('Phrase probability check', { 
+			randomValue: randomInt(0, CONFIG.COUNTDOWN.PHRASE_PROBABILITY),
+			probability: CONFIG.COUNTDOWN.PHRASE_PROBABILITY,
+			willAddPhrase: shouldAddPhrase
+		});
+
+		if (shouldAddPhrase) {
 			const twext_phrase = short_phrase[randomInt(0, short_phrase.length - 1)];
 			const twext_tag = short_tags[randomInt(0, short_tags.length - 1)];
 
-			logger.debug('Adding phrase and tag to tweet', { phrase: twext_phrase, tag: twext_tag });
+			logger.info('Adding phrase and tag to tweet', { phrase: twext_phrase, tag: twext_tag });
 
 			current_twext = `${current_comma}! ${twext_phrase} ${twext_tag}`;
 		}
@@ -512,18 +559,45 @@ async function countdown() {
 		logger.info('Tweet prepared', { text: current_twext, length: current_twext.length });
 
 		// Send the tweet with rate limit handling
+		logger.info('=== POSTING TWEET TO TWITTER API ===');
+		logger.info('Twitter API client status', { 
+			hasClient: !!twitterClient,
+			hasV2: !!twitterClient?.v2,
+			tweetText: current_twext.substring(0, 50) + '...'
+		});
+
 		let tweet;
 		try {
+			logger.info('Calling twitterClient.v2.tweet()', { tweetLength: current_twext.length });
 			tweet = await twitterClient.v2.tweet(current_twext);
-			logger.info('Tweet posted successfully', { tweetId: tweet.data?.id });
+			logger.info('=== TWEET POSTED SUCCESSFULLY ===');
+			logger.info('Tweet response', { 
+				tweetId: tweet.data?.id,
+				text: tweet.data?.text,
+				createdAt: tweet.data?.created_at
+			});
 		} catch (twitterError) {
+			logger.error('=== TWITTER API ERROR ===');
+			logger.error('Twitter API error details', {
+				code: twitterError.code,
+				status: twitterError.status,
+				message: twitterError.message,
+				rateLimit: twitterError.rateLimit,
+				data: twitterError.data
+			});
+
 			// Handle Twitter rate limits (429 Too Many Requests)
 			if (twitterError.code === 429 || twitterError.status === 429) {
 				const retryAfter = twitterError.rateLimit?.reset 
 					? (twitterError.rateLimit.reset * 1000) - Date.now()
 					: 900000; // Default to 15 minutes if reset time not available
 				
-				logger.warn('Twitter rate limit hit', { retryAfterSeconds: Math.ceil(retryAfter / 1000) });
+				logger.warn('Twitter rate limit hit - scheduling retry', { 
+					retryAfterMs: retryAfter,
+					retryAfterSeconds: Math.ceil(retryAfter / 1000),
+					retryAfterMinutes: Math.ceil(retryAfter / 60000),
+					resetTime: twitterError.rateLimit?.reset ? new Date(twitterError.rateLimit.reset * 1000).toISOString() : 'unknown'
+				});
 				setTimeout(() => countdown(), retryAfter);
 				return;
 			}
@@ -531,7 +605,8 @@ async function countdown() {
 		}
 
 		// Step 2: Update the DynamoDB record with the new number
-		logger.debug('Updating DynamoDB');
+		logger.info('=== UPDATING DYNAMODB ===');
+		logger.debug('Updating DynamoDB', { tableName: CONFIG.AWS.TABLE_NAME });
 
 		const insertParams = {
 			TableName: CONFIG.AWS.TABLE_NAME,
@@ -543,29 +618,53 @@ async function countdown() {
 			},
 		};
 
+		logger.debug('DynamoDB PutCommand params', { 
+			tableName: insertParams.TableName,
+			number: insertParams.Item.number,
+			hasString: !!insertParams.Item.string,
+			datetime: insertParams.Item.datetime
+		});
+
 		// DynamoDB operations with retry handling for throttling
 		let retries = 0;
 		const maxRetries = 5;
 		while (retries < maxRetries) {
 			try {
+				logger.info('Sending PutCommand to DynamoDB', { attempt: retries + 1, maxRetries });
 				await docClient.send(new PutCommand(insertParams));
+				logger.info('=== DYNAMODB UPDATE SUCCESSFUL ===');
 				logger.info('Inserted new record', { number: current_number });
 				
 				// Update cache with new state
+				logger.debug('Updating cache with new state');
 				cache.set('countdown_state', {
 					number: current_number,
 					comma: current_comma,
 					string: current_string
 				});
+				logger.debug('Cache updated successfully');
 				
 				break; // Success, exit retry loop
 			} catch (dynamoError) {
+				logger.error('DynamoDB error', {
+					name: dynamoError.name,
+					message: dynamoError.message,
+					httpStatusCode: dynamoError.$metadata?.httpStatusCode,
+					requestId: dynamoError.$metadata?.requestId,
+					attempt: retries + 1
+				});
+
 				// Handle DynamoDB throttling (ProvisionedThroughputExceededException)
 				if (dynamoError.name === 'ProvisionedThroughputExceededException' || 
 				    dynamoError.$metadata?.httpStatusCode === 400) {
 					retries++;
 					const backoffDelay = Math.min(1000 * Math.pow(2, retries), 30000); // Exponential backoff, max 30s
-					logger.warn('DynamoDB throttled', { retry: retries, maxRetries, backoffDelay });
+					logger.warn('DynamoDB throttled - retrying with backoff', { 
+						retry: retries, 
+						maxRetries, 
+						backoffDelayMs: backoffDelay,
+						backoffDelaySeconds: Math.ceil(backoffDelay / 1000)
+					});
 					await new Promise(resolve => setTimeout(resolve, backoffDelay));
 				} else {
 					throw dynamoError; // Re-throw if not a throttling error
@@ -574,22 +673,41 @@ async function countdown() {
 		}
 		
 		if (retries >= maxRetries) {
+			logger.error('=== DYNAMODB UPDATE FAILED AFTER MAX RETRIES ===');
 			throw new Error('Failed to update DynamoDB after maximum retries');
 		}
 
 		// Schedule next countdown with random delay
 		// Delay ranges from ~14 days to ~88 days (1234567ms to 7654321ms)
+		logger.info('=== SCHEDULING NEXT COUNTDOWN ===');
 		const delay = randomInt(CONFIG.COUNTDOWN.DELAY_MIN_MS, CONFIG.COUNTDOWN.DELAY_MAX_MS);
 		const delayHours = delay / 3600000;
-		logger.info('Scheduling next countdown', { delayMs: delay, delayHours: delayHours.toFixed(2) });
+		const delayDays = delayHours / 24;
+		logger.info('Next countdown scheduled', { 
+			delayMs: delay, 
+			delayHours: delayHours.toFixed(2),
+			delayDays: delayDays.toFixed(2),
+			nextRunTime: new Date(Date.now() + delay).toISOString()
+		});
 
 		setTimeout(() => countdown(), delay);
+		logger.info('=== COUNTDOWN FUNCTION COMPLETE ===');
 
 	} catch (error) {
-		logger.error('Countdown error', { error: error.message, stack: error.stack });
+		logger.error('=== COUNTDOWN FUNCTION ERROR ===');
+		logger.error('Countdown error', { 
+			error: error.message, 
+			stack: error.stack,
+			name: error.name,
+			code: error.code
+		});
 
 		// Retry after shorter delay on error (1 minute)
-		logger.info('Retrying countdown after error', { retryDelaySeconds: CONFIG.COUNTDOWN.ERROR_RETRY_DELAY_MS / 1000 });
+		logger.info('Retrying countdown after error', { 
+			retryDelayMs: CONFIG.COUNTDOWN.ERROR_RETRY_DELAY_MS,
+			retryDelaySeconds: CONFIG.COUNTDOWN.ERROR_RETRY_DELAY_MS / 1000,
+			nextRetryTime: new Date(Date.now() + CONFIG.COUNTDOWN.ERROR_RETRY_DELAY_MS).toISOString()
+		});
 		setTimeout(() => countdown(), CONFIG.COUNTDOWN.ERROR_RETRY_DELAY_MS);
 	}
 }
@@ -674,7 +792,13 @@ app.use(express.static('public'));
 
 // Request logging middleware
 app.use((req, res, next) => {
-	logger.info('HTTP request', { method: req.method, path: req.path, ip: req.ip });
+	logger.info('HTTP request', { 
+		method: req.method, 
+		path: req.path, 
+		ip: req.ip,
+		userAgent: req.get('user-agent'),
+		query: req.query
+	});
 	next();
 });
 
@@ -696,18 +820,27 @@ app.get('/', (req, res) => {
 });
 
 app.get('/badge', async (req, res) => {
+	logger.info('Badge endpoint called');
 	// Validate that current_comma exists
 	if (!current_comma) {
+		logger.warn('Badge requested but service still initializing');
 		return res.status(503).send('Service initializing');
 	}
 
 	const badge_url = `https://${CONFIG.BADGE.ALLOWED_DOMAIN}/badge/Von%20Countdown-${encodeURIComponent(current_comma)}-a26d9e.svg`;
+	logger.debug('Fetching badge', { badgeUrl: badge_url, currentComma: current_comma });
 
 	try {
 		const response = await axios.get(badge_url, { responseType: 'stream' });
+		logger.info('Badge fetched successfully');
 		response.data.pipe(res);
 	} catch (error) {
-		logger.error('Badge fetch error', { error: error.message });
+		logger.error('Badge fetch error', { 
+			error: error.message,
+			status: error.response?.status,
+			statusText: error.response?.statusText,
+			badgeUrl: badge_url
+		});
 		res.status(500).send('Error fetching badge');
 	}
 });
@@ -740,12 +873,13 @@ app.use((req, res) => {
 
 // Error handler
 app.use((err, req, res, next) => {
-	const sanitizedError = sanitizeError(err);
+	const errorInfo = err instanceof Error 
+		? { message: err.message, name: err.name, stack: err.stack }
+		: { error: String(err) };
 	logger.error('Express error handler', { 
-		error: sanitizedError?.message || String(sanitizedError), 
-		stack: sanitizedError?.stack, 
+		...sanitizeData(errorInfo),
 		path: req.path,
-		name: sanitizedError?.name
+		method: req.method
 	});
 	res.status(500).render('error', {
 		status: 500,
@@ -766,8 +900,21 @@ app.use((err, req, res, next) => {
 
 // Export app for testing (only if not already started)
 if (process.env.NODE_ENV !== 'test') {
+	logger.info('=== STARTING EXPRESS SERVER ===');
+	logger.info('Server configuration', {
+		port: CONFIG.APP.PORT,
+		env: CONFIG.APP.ENV,
+		nodeVersion: process.version,
+		platform: process.platform
+	});
+
 	const server = app.listen(CONFIG.APP.PORT, () => {
-		logger.info('Server started', { port: CONFIG.APP.PORT, env: process.env.NODE_ENV || 'development' });
+		logger.info('=== SERVER STARTED SUCCESSFULLY ===');
+		logger.info('Server started', { 
+			port: CONFIG.APP.PORT, 
+			env: CONFIG.APP.ENV,
+			url: `http://localhost:${CONFIG.APP.PORT}`
+		});
 	});
 
 	// Graceful shutdown handler
@@ -790,22 +937,5 @@ if (process.env.NODE_ENV !== 'test') {
 
 // Export app for testing
 module.exports = app;
-
-// Graceful shutdown handler
-process.on('SIGTERM', () => {
-	logger.info('SIGTERM received, shutting down gracefully');
-	server.close(() => {
-		logger.info('Process terminated');
-		process.exit(0);
-	});
-});
-
-process.on('SIGINT', () => {
-	logger.info('SIGINT received, shutting down gracefully');
-	server.close(() => {
-		logger.info('Process terminated');
-		process.exit(0);
-	});
-});
 
 //*******************************************************************
