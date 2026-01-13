@@ -264,15 +264,7 @@ let current_twext;
 // Utility Functions
 //*******************************************************************
 
-/**
- * Generates a random integer between min and max (inclusive)
- * @param {number} min - Minimum value
- * @param {number} max - Maximum value
- * @returns {number} Random integer between min and max
- */
-function randomInt(min, max) {
-	return Math.floor(Math.random() * (max - min + 1)) + min;
-}
+const { randomInt } = require('./src/utils/random');
 
 //*******************************************************************
 // Initialization
