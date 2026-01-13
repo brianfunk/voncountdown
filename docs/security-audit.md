@@ -19,10 +19,11 @@
    - ✅ No console.log of environment variables
 
 3. **Log Security**
-   - ✅ Winston logger with sanitization filter
+   - ✅ Simple console logger with sanitization function
    - ✅ Sensitive keys automatically redacted: `password`, `secret`, `key`, `token`, `credential`, `accessKey`, `secretAccessKey`
    - ✅ Error objects sanitized before logging
    - ✅ Unhandled rejections sanitized
+   - ✅ Logs go to stdout/stderr (CloudWatch compatible)
 
 4. **Error Handling Security**
    - ✅ `sanitizeError()` function prevents logging sensitive data
@@ -36,12 +37,13 @@
 
 ## Security Measures Implemented
 
-### 1. Log Sanitization Filter
+### 1. Log Sanitization Function
 ```javascript
-const sensitiveDataFilter = winston.format((info) => {
+function sanitizeData(data) {
 	const sensitiveKeys = ['password', 'secret', 'key', 'token', 'credential', 'accessKey', 'secretAccessKey'];
-	// Automatically redacts sensitive data
-});
+	// Recursively sanitizes objects to redact sensitive data
+	// Used by console.log/error/warn logger
+}
 ```
 
 ### 2. Error Sanitization Function
@@ -52,10 +54,11 @@ function sanitizeError(error) {
 }
 ```
 
-### 3. Pre-commit Hooks
-- Linting checks prevent committing bad code
-- Tests must pass before commit
-- Prevents accidental secret commits
+### 3. Logging Architecture
+- Simple console.log/error/warn logger
+- All logs go to stdout/stderr
+- Automatically captured by AWS App Runner → CloudWatch Logs
+- No file-based logging (simplified for cloud deployment)
 
 ## Recommendations for Production
 
@@ -89,10 +92,10 @@ function sanitizeError(error) {
 - Proper environment variable usage
 - Log sanitization in place
 - Error sanitization in place
-- Pre-commit hooks prevent bad commits
+- CloudWatch-compatible logging
 
 **Remaining Risks:**
-- Log files on disk (mitigated by .gitignore and sanitization)
+- CloudWatch Logs retention (mitigated by AWS access controls and log sanitization)
 - Memory dumps (low risk, standard practice)
 - Environment variable access (mitigated by proper access controls)
 
@@ -104,7 +107,8 @@ All security best practices are in place:
 - Credentials only in environment variables
 - Log sanitization prevents accidental exposure
 - Error sanitization prevents data leakage
-- Pre-commit hooks prevent bad commits
 - Proper .gitignore configuration
+- CloudWatch-compatible logging (stdout/stderr)
+- Content Security Policy (CSP) configured for external resources
 
-The application follows security best practices for credential management.
+The application follows security best practices for credential management and is optimized for AWS App Runner deployment.

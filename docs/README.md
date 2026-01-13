@@ -22,3 +22,22 @@ This directory contains project documentation, reports, and quality assessments.
 ## Report Status
 
 All reports are current as of 2026-01-13 and reflect the current state of the codebase after comprehensive quality improvements.
+
+## Recent Updates
+
+### Logging Simplification (2026-01-13)
+- Removed Winston dependency
+- Replaced with simple console.log/error/warn logger
+- Optimized for AWS App Runner/CloudWatch Logs
+- Extensive logging added throughout application for debugging
+- Log sanitization maintained for security
+
+### Content Security Policy (2026-01-13)
+- Updated CSP to allow external resources (Twitter widgets, jQuery, Wikipedia, YouTube)
+- Fixed front-end CSP violations
+- Added favicon route to prevent 404 errors
+
+### Deployment
+- Optimized for AWS App Runner deployment
+- CloudWatch Logs integration
+- Simplified logging architecture

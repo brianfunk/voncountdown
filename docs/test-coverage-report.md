@@ -151,15 +151,17 @@ See `tests/helpers/mocks.js` for available mock utilities.
 ## Test Maintenance
 
 ### Best Practices
-- Run tests before committing (enforced by pre-commit hooks)
+- Run tests before committing (`npm test`)
 - Keep tests updated with code changes
-- Review coverage reports regularly
+- Review coverage reports regularly (`npm run test:coverage`)
 - Refactor tests when code refactors
+- Check CloudWatch Logs for runtime debugging (AWS App Runner)
 
-### Pre-commit Checks
-- ✅ Linting enforced
-- ✅ Tests must pass
-- ✅ Prevents bad commits
+### Logging & Monitoring
+- ✅ Extensive logging throughout application
+- ✅ CloudWatch-compatible (stdout/stderr)
+- ✅ Log sanitization for security
+- ✅ Detailed error logging for debugging
 
 ---
 
