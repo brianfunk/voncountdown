@@ -43,3 +43,14 @@ logs/
 
 # Optional REPL history
 .node_repl_history
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

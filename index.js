@@ -65,9 +65,30 @@ require('dotenv').config();
 // Logger Setup
 //*******************************************************************
 
+// Security: Filter to prevent logging sensitive data
+const sensitiveDataFilter = winston.format((info) => {
+	const sensitiveKeys = ['password', 'secret', 'key', 'token', 'credential', 'accessKey', 'secretAccessKey'];
+	
+	if (info.message && typeof info.message === 'object') {
+		const sanitized = {};
+		for (const [key, value] of Object.entries(info.message)) {
+			const lowerKey = key.toLowerCase();
+			if (sensitiveKeys.some(sensitive => lowerKey.includes(sensitive))) {
+				sanitized[key] = '[REDACTED]';
+			} else {
+				sanitized[key] = value;
+			}
+		}
+		info.message = sanitized;
+	}
+	
+	return info;
+});
+
 const logger = winston.createLogger({
 	level: process.env.LOG_LEVEL || 'info',
 	format: winston.format.combine(
+		sensitiveDataFilter(),
 		winston.format.timestamp(),
 		winston.format.errors({ stack: true }),
 		winston.format.json()
@@ -89,9 +110,57 @@ if (process.env.NODE_ENV !== 'production') {
 	}));
 }
 
+//*******************************************************************
+// Security: Log Sanitization
+//*******************************************************************
+
+/**
+ * Sanitizes error objects to prevent logging sensitive data
+ * @param {*} error - Error object or value to sanitize
+ * @returns {Object} Sanitized error object
+ */
+function sanitizeError(error) {
+	if (!error) return null;
+	
+	const sensitiveKeys = ['password', 'secret', 'key', 'token', 'credential', 'accessKey', 'secretAccessKey', 'authorization'];
+	const sanitized = {};
+	
+	// Handle Error objects
+	if (error instanceof Error) {
+		sanitized.message = error.message;
+		sanitized.name = error.name;
+		sanitized.stack = error.stack;
+		return sanitized;
+	}
+	
+	// Handle objects
+	if (typeof error === 'object') {
+		for (const [key, value] of Object.entries(error)) {
+			const lowerKey = key.toLowerCase();
+			// Check if key contains sensitive terms
+			if (sensitiveKeys.some(sensitive => lowerKey.includes(sensitive))) {
+				sanitized[key] = '[REDACTED]';
+			} else if (typeof value === 'object' && value !== null) {
+				sanitized[key] = sanitizeError(value);
+			} else {
+				sanitized[key] = value;
+			}
+		}
+		return sanitized;
+	}
+	
+	// Handle primitives
+	return String(error);
+}
+
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
-	logger.error('Unhandled Rejection at:', { promise, reason });
+	const sanitizedReason = sanitizeError(reason);
+	logger.error('Unhandled Rejection', { 
+		error: sanitizedReason?.message || String(sanitizedReason),
+		stack: sanitizedReason?.stack,
+		name: sanitizedReason?.name
+	});
 	// Don't exit - allow server to continue running
 });
 
@@ -635,7 +704,13 @@ app.use((req, res) => {
 
 // Error handler
 app.use((err, req, res, next) => {
-	logger.error('Express error handler', { error: err.message, stack: err.stack, path: req.path });
+	const sanitizedError = sanitizeError(err);
+	logger.error('Express error handler', { 
+		error: sanitizedError?.message || String(sanitizedError), 
+		stack: sanitizedError?.stack, 
+		path: req.path,
+		name: sanitizedError?.name
+	});
 	res.status(500).render('error', {
 		status: 500,
 		message: 'Internal server error',
@@ -653,9 +728,32 @@ app.use((err, req, res, next) => {
 // Server Startup
 //*******************************************************************
 
-const server = app.listen(CONFIG.APP.PORT, () => {
-	logger.info('Server started', { port: CONFIG.APP.PORT, env: process.env.NODE_ENV || 'development' });
-});
+// Export app for testing (only if not already started)
+if (process.env.NODE_ENV !== 'test') {
+	const server = app.listen(CONFIG.APP.PORT, () => {
+		logger.info('Server started', { port: CONFIG.APP.PORT, env: process.env.NODE_ENV || 'development' });
+	});
+
+	// Graceful shutdown handler
+	process.on('SIGTERM', () => {
+		logger.info('SIGTERM received, shutting down gracefully');
+		server.close(() => {
+			logger.info('Process terminated');
+			process.exit(0);
+		});
+	});
+
+	process.on('SIGINT', () => {
+		logger.info('SIGINT received, shutting down gracefully');
+		server.close(() => {
+			logger.info('Process terminated');
+			process.exit(0);
+		});
+	});
+}
+
+// Export app for testing
+module.exports = app;
 
 // Graceful shutdown handler
 process.on('SIGTERM', () => {

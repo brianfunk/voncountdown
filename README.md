@@ -110,21 +110,17 @@ Health check endpoint returning JSON:
 
 ### Running Tests
 ```bash
+# Run all tests
 npm test
+
+# Run tests in watch mode
 npm run test:watch
+
+# Run tests with coverage report
 npm run test:coverage
 ```
 
-### Linting
-```bash
-npm run lint
-npm run lint:fix
-```
-
-### Code Formatting
-```bash
-npm run format
-```
+See `tests/README.md` for testing guide.
 
 ## Architecture
 
