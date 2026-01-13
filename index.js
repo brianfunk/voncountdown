@@ -612,8 +612,47 @@ app.use((req, res, next) => {
 	if (!req.timedout) next();
 });
 
-// Security middleware
-app.use(helmet());
+// Security middleware with Content Security Policy
+app.use(helmet({
+	contentSecurityPolicy: {
+		directives: {
+			defaultSrc: ["'self'"],
+			scriptSrc: [
+				"'self'",
+				"'sha256-QJVoVswsd9o99Vg11t+c0fQeJD0p1YfKwOQdoYT0h7E='", // Inline script hash
+				'https://platform.twitter.com',
+				'https://code.jquery.com',
+				'https://static.cloudflareinsights.com'
+			],
+			styleSrc: [
+				"'self'",
+				"'unsafe-inline'", // Required for inline styles
+				'https://fonts.googleapis.com'
+			],
+			fontSrc: [
+				"'self'",
+				'https://fonts.gstatic.com'
+			],
+			imgSrc: [
+				"'self'",
+				'data:',
+				'https://www.wikipedia.org',
+				'https://img.shields.io'
+			],
+			frameSrc: [
+				"'self'",
+				'https://en.m.wikipedia.org',
+				'https://www.youtube.com',
+				'https://platform.twitter.com'
+			],
+			connectSrc: [
+				"'self'",
+				'https://api.twitter.com',
+				'https://static.cloudflareinsights.com'
+			]
+		}
+	}
+}));
 
 // Rate limiting - general
 const limiter = rateLimit({
@@ -642,6 +681,11 @@ app.use((req, res, next) => {
 //*******************************************************************
 // Routes
 //*******************************************************************
+
+// Favicon route to prevent 404 errors
+app.get('/favicon.ico', (req, res) => {
+	res.status(204).end();
+});
 
 app.get('/', (req, res) => {
 	res.render('home', {
