@@ -8,7 +8,7 @@
 	</div>
 </div>
 
-<div id="numberimg">
+<div id="numberimg" data-number="{{current_number}}">
 </div>
 
 <!--
@@ -54,22 +54,31 @@
 	</div>	
 </div>
 
-<script src="https://code.jquery.com/jquery-3.1.1.min.js" integrity="sha256-hVVnYaiADRTO2PzUGmuLJr8BLUSjGIZsDYGmIJLv2b8=" crossorigin="anonymous"></script>
+<script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
 
 <script>
 function addImg(num) {
-	
-	$('#numberimg').append('<img id="img_'+ num +'" src="/img/cvc_'+ num +'.png" />')
-
+	// Escape the number to prevent XSS
+	const safeNum = String(num).replace(/[^0-9]/g, '');
+	if (safeNum) {
+		$('#numberimg').append('<img id="img_'+ safeNum +'" src="/img/cvc_'+ safeNum +'.png" alt="Number '+ safeNum +'" />');
+	}
 }
 
-var cur_num = ''+ {{current_number}};
+// Safely get number from data attribute to prevent XSS
+const numberElement = document.getElementById('numberimg');
+const currentNumber = numberElement ? numberElement.dataset.number : '';
+const cur_num = String(currentNumber || '');
 
-for (var i=0; i<cur_num.length; i++) {	
-	addImg(cur_num.charAt(i));
-	console.log(cur_num.charAt(i));
+if (cur_num) {
+	for (var i=0; i<cur_num.length; i++) {	
+		const digit = cur_num.charAt(i);
+		// Validate digit is 0-9
+		if (/^[0-9]$/.test(digit)) {
+			addImg(digit);
+			console.log(digit);
+		}
+	}
 }
-
-
 
 </script>
