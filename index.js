@@ -731,23 +731,44 @@ app.use((req, res, next) => {
 });
 
 // Security middleware with Content Security Policy
+// Permissive CSP for public site - allows external resources
 app.use(helmet({
 	contentSecurityPolicy: {
 		directives: {
 			defaultSrc: ["'self'"],
 			scriptSrc: [
 				"'self'",
-				"'unsafe-inline'", // Allow inline scripts (required for template)
+				"'unsafe-inline'", // Allow inline scripts
 				'https://platform.twitter.com',
+				'https://*.twitter.com',
+				'https://x.com',
+				'https://*.x.com',
 				'https://code.jquery.com',
-				'https://static.cloudflareinsights.com'
+				'https://static.cloudflareinsights.com',
+				'https://*.cloudflareinsights.com',
+				'https://www.youtube.com',
+				'https://*.youtube.com',
+				'https://*.doubleclick.net',
+				'https://*.google.com',
+				'https://*.googleapis.com',
+				'https://*.googlesyndication.com'
 			],
 			scriptSrcElem: [
 				"'self'",
 				"'unsafe-inline'", // Allow inline script elements
 				'https://platform.twitter.com',
+				'https://*.twitter.com',
+				'https://x.com',
+				'https://*.x.com',
 				'https://code.jquery.com',
-				'https://static.cloudflareinsights.com'
+				'https://static.cloudflareinsights.com',
+				'https://*.cloudflareinsights.com',
+				'https://www.youtube.com',
+				'https://*.youtube.com',
+				'https://*.doubleclick.net',
+				'https://*.google.com',
+				'https://*.googleapis.com',
+				'https://*.googlesyndication.com'
 			],
 			styleSrc: [
 				"'self'",
@@ -756,27 +777,45 @@ app.use(helmet({
 			],
 			fontSrc: [
 				"'self'",
-				'https://fonts.gstatic.com'
+				'https://fonts.gstatic.com',
+				'https://fonts.googleapis.com'
 			],
 			imgSrc: [
 				"'self'",
 				'data:',
-				'https://www.wikipedia.org',
-				'https://en.wikipedia.org',
-				'https://en.m.wikipedia.org',
-				'https://img.shields.io'
+				'https:',
+				'http:' // Allow all images from any source
 			],
 			frameSrc: [
 				"'self'",
-				'https://en.m.wikipedia.org',
-				'https://www.youtube.com',
-				'https://youtube.com',
-				'https://platform.twitter.com'
+				'https:',
+				'http:' // Allow all iframes (public site)
+			],
+			frameAncestors: [
+				"'self'"
 			],
 			connectSrc: [
 				"'self'",
 				'https://api.twitter.com',
-				'https://static.cloudflareinsights.com'
+				'https://api.x.com',
+				'https://*.x.com',
+				'https://static.cloudflareinsights.com',
+				'https://*.cloudflareinsights.com',
+				'https://www.youtube.com',
+				'https://youtube.com',
+				'https://*.youtube.com',
+				'https://*.googleapis.com',
+				'https://*.doubleclick.net',
+				'https://*.google.com',
+				'https://*.googleadservices.com',
+				'https://*.googlesyndication.com',
+				'https://sesameworkshop.org',
+				'https://*.sesameworkshop.org'
+			],
+			mediaSrc: [
+				"'self'",
+				'https://www.youtube.com',
+				'https://*.youtube.com'
 			]
 		}
 	}
@@ -831,18 +870,17 @@ app.get('/', (req, res) => {
 
 app.get('/badge', async (req, res) => {
 	logger.info('Badge endpoint called');
-	// Validate that current_comma exists
-	if (!current_comma) {
-		logger.warn('Badge requested but service still initializing');
-		return res.status(503).send('Service initializing');
-	}
+	
+	// Use current_comma if available, otherwise fallback to START_NUMBER formatted
+	const badgeValue = current_comma || numberstring.comma(CONFIG.APP.START_NUMBER);
+	logger.debug('Badge value', { badgeValue, hasCurrentComma: !!current_comma, isFallback: !current_comma });
 
-	const badge_url = `https://${CONFIG.BADGE.ALLOWED_DOMAIN}/badge/Von%20Countdown-${encodeURIComponent(current_comma)}-a26d9e.svg`;
-	logger.debug('Fetching badge', { badgeUrl: badge_url, currentComma: current_comma });
+	const badge_url = `https://${CONFIG.BADGE.ALLOWED_DOMAIN}/badge/Von%20Countdown-${encodeURIComponent(badgeValue)}-a26d9e.svg`;
+	logger.debug('Fetching badge', { badgeUrl: badge_url, badgeValue });
 
 	try {
 		const response = await axios.get(badge_url, { responseType: 'stream' });
-		logger.info('Badge fetched successfully');
+		logger.info('Badge fetched successfully', { badgeValue });
 		response.data.pipe(res);
 	} catch (error) {
 		logger.error('Badge fetch error', { 
