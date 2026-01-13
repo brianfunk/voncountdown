@@ -206,12 +206,23 @@ logger.info('Initializing AWS DynamoDB client', {
 	tableName: CONFIG.AWS.TABLE_NAME 
 });
 
+// Try to use default credential provider chain first (for local development)
+// Falls back to explicit credentials if AWS_PROFILE or other chain providers aren't available
+let credentials;
+if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+	credentials = {
+		accessKeyId: process.env.AWS_ACCESS_KEY_ID.trim(),
+		secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY.trim(),
+	};
+	logger.info('Using explicit AWS credentials from environment variables');
+} else {
+	logger.info('No explicit credentials found, using default credential provider chain');
+	credentials = undefined; // Let AWS SDK use default credential chain
+}
+
 const client = new DynamoDBClient({
 	region: CONFIG.AWS.REGION,
-	credentials: {
-		accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-		secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-	},
+	...(credentials && { credentials }), // Only set credentials if provided
 	maxAttempts: 5, // Retry up to 5 times
 	retryMode: 'adaptive', // Use adaptive retry mode for throttling
 });
@@ -383,8 +394,25 @@ const { randomInt } = require('./src/utils/random');
 			error: error.message, 
 			stack: error.stack,
 			name: error.name,
-			code: error.code
+			code: error.code,
+			region: CONFIG.AWS.REGION,
+			tableName: CONFIG.AWS.TABLE_NAME,
+			hasAccessKey: !!process.env.AWS_ACCESS_KEY_ID,
+			hasSecretKey: !!process.env.AWS_SECRET_ACCESS_KEY
 		});
+		
+		// Provide helpful error messages for common issues
+		if (error.name === 'InvalidSignatureException') {
+			logger.error('AWS Credentials Error: The AWS Secret Access Key does not match the Access Key ID.');
+			logger.error('Please verify your AWS credentials in .env file are correct and match.');
+		} else if (error.name === 'ResourceNotFoundException') {
+			logger.error('DynamoDB Table Error: The table does not exist.');
+			logger.error(`Please create the table "${CONFIG.AWS.TABLE_NAME}" in region "${CONFIG.AWS.REGION}"`);
+		} else if (error.name === 'UnrecognizedClientException') {
+			logger.error('AWS Credentials Error: The security token included in the request is invalid.');
+			logger.error('Please check your AWS credentials are valid and not expired.');
+		}
+		
 		logger.warn('Continuing without DynamoDB connection. Web server will still run.');
 		// Don't exit - allow web server to run even if DynamoDB fails
 	}
@@ -896,6 +924,8 @@ app.get('/badge', async (req, res) => {
 	try {
 		const response = await axios.get(badge_url, { responseType: 'stream' });
 		logger.info('Badge fetched successfully', { badgeValue });
+		res.setHeader('Content-Type', 'image/svg+xml');
+		res.setHeader('Cache-Control', 'public, max-age=300');
 		response.data.pipe(res);
 	} catch (error) {
 		logger.error('Badge fetch error', { 
