@@ -777,7 +777,9 @@ async function countdown() {
 const app = express();
 
 // Trust proxy for accurate IP detection behind load balancers (AWS App Runner, Heroku, etc.)
-app.set('trust proxy', true);
+// Use number 1 to trust first proxy (AWS App Runner uses 1 proxy layer)
+// This prevents the express-rate-limit warning while still working correctly
+app.set('trust proxy', 1);
 
 app.engine('handlebars', exphbs.engine({ defaultLayout: 'main' }));
 app.set('view engine', 'handlebars');
