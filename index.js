@@ -616,15 +616,45 @@ async function countdown() {
 
 			// Handle Twitter rate limits (429 Too Many Requests)
 			if (twitterError.code === 429 || twitterError.status === 429) {
-				const retryAfter = twitterError.rateLimit?.reset 
-					? (twitterError.rateLimit.reset * 1000) - Date.now()
+				// Check if daily limit is exhausted - use day.reset instead of general reset
+				const rateLimit = twitterError.rateLimit || {};
+				const dayLimit = rateLimit.day || {};
+				const userDayLimit = rateLimit.userDay || {};
+				
+				// Use daily reset time if daily limit is exhausted, otherwise use general reset
+				let resetTimestamp = null;
+				if (dayLimit.remaining === 0 && dayLimit.reset) {
+					resetTimestamp = dayLimit.reset;
+					logger.warn('Daily tweet limit exhausted - waiting for daily reset', {
+						dailyLimit: dayLimit.limit,
+						dailyRemaining: dayLimit.remaining,
+						resetTimestamp: resetTimestamp
+					});
+				} else if (userDayLimit.remaining === 0 && userDayLimit.reset) {
+					resetTimestamp = userDayLimit.reset;
+					logger.warn('User daily tweet limit exhausted - waiting for daily reset', {
+						userDailyLimit: userDayLimit.limit,
+						userDailyRemaining: userDayLimit.remaining,
+						resetTimestamp: resetTimestamp
+					});
+				} else if (rateLimit.reset) {
+					resetTimestamp = rateLimit.reset;
+				}
+				
+				const retryAfter = resetTimestamp 
+					? Math.max((resetTimestamp * 1000) - Date.now(), 60000) // At least 1 minute
 					: 900000; // Default to 15 minutes if reset time not available
 				
 				logger.warn('Twitter rate limit hit - scheduling retry', { 
 					retryAfterMs: retryAfter,
 					retryAfterSeconds: Math.ceil(retryAfter / 1000),
 					retryAfterMinutes: Math.ceil(retryAfter / 60000),
-					resetTime: twitterError.rateLimit?.reset ? new Date(twitterError.rateLimit.reset * 1000).toISOString() : 'unknown'
+					retryAfterHours: (retryAfter / 3600000).toFixed(2),
+					resetTime: resetTimestamp ? new Date(resetTimestamp * 1000).toISOString() : 'unknown',
+					dailyLimit: dayLimit.limit,
+					dailyRemaining: dayLimit.remaining,
+					generalLimit: rateLimit.limit,
+					generalRemaining: rateLimit.remaining
 				});
 				setTimeout(() => countdown(), retryAfter);
 				return;
@@ -745,6 +775,9 @@ async function countdown() {
 //*******************************************************************
 
 const app = express();
+
+// Trust proxy for accurate IP detection behind load balancers (AWS App Runner, Heroku, etc.)
+app.set('trust proxy', true);
 
 app.engine('handlebars', exphbs.engine({ defaultLayout: 'main' }));
 app.set('view engine', 'handlebars');
