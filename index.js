@@ -206,12 +206,23 @@ logger.info('Initializing AWS DynamoDB client', {
 	tableName: CONFIG.AWS.TABLE_NAME 
 });
 
+// Try to use default credential provider chain first (for local development)
+// Falls back to explicit credentials if AWS_PROFILE or other chain providers aren't available
+let credentials;
+if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+	credentials = {
+		accessKeyId: process.env.AWS_ACCESS_KEY_ID.trim(),
+		secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY.trim(),
+	};
+	logger.info('Using explicit AWS credentials from environment variables');
+} else {
+	logger.info('No explicit credentials found, using default credential provider chain');
+	credentials = undefined; // Let AWS SDK use default credential chain
+}
+
 const client = new DynamoDBClient({
 	region: CONFIG.AWS.REGION,
-	credentials: {
-		accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-		secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-	},
+	...(credentials && { credentials }), // Only set credentials if provided
 	maxAttempts: 5, // Retry up to 5 times
 	retryMode: 'adaptive', // Use adaptive retry mode for throttling
 });
@@ -383,8 +394,25 @@ const { randomInt } = require('./src/utils/random');
 			error: error.message, 
 			stack: error.stack,
 			name: error.name,
-			code: error.code
+			code: error.code,
+			region: CONFIG.AWS.REGION,
+			tableName: CONFIG.AWS.TABLE_NAME,
+			hasAccessKey: !!process.env.AWS_ACCESS_KEY_ID,
+			hasSecretKey: !!process.env.AWS_SECRET_ACCESS_KEY
 		});
+		
+		// Provide helpful error messages for common issues
+		if (error.name === 'InvalidSignatureException') {
+			logger.error('AWS Credentials Error: The AWS Secret Access Key does not match the Access Key ID.');
+			logger.error('Please verify your AWS credentials in .env file are correct and match.');
+		} else if (error.name === 'ResourceNotFoundException') {
+			logger.error('DynamoDB Table Error: The table does not exist.');
+			logger.error(`Please create the table "${CONFIG.AWS.TABLE_NAME}" in region "${CONFIG.AWS.REGION}"`);
+		} else if (error.name === 'UnrecognizedClientException') {
+			logger.error('AWS Credentials Error: The security token included in the request is invalid.');
+			logger.error('Please check your AWS credentials are valid and not expired.');
+		}
+		
 		logger.warn('Continuing without DynamoDB connection. Web server will still run.');
 		// Don't exit - allow web server to run even if DynamoDB fails
 	}
@@ -731,42 +759,106 @@ app.use((req, res, next) => {
 });
 
 // Security middleware with Content Security Policy
+// Maximally permissive CSP for public site - allows all external resources
+// This prevents breakage if embedded sites change their domains/scripts
 app.use(helmet({
 	contentSecurityPolicy: {
 		directives: {
-			defaultSrc: ["'self'"],
+			defaultSrc: ["'self'", 'https:', 'http:', 'data:', 'blob:'],
 			scriptSrc: [
 				"'self'",
-				"'sha256-QJVoVswsd9o99Vg11t+c0fQeJD0p1YfKwOQdoYT0h7E='", // Inline script hash
-				'https://platform.twitter.com',
-				'https://code.jquery.com',
-				'https://static.cloudflareinsights.com'
+				"'unsafe-inline'",
+				"'unsafe-eval'", // Allow eval for maximum compatibility
+				'https:',
+				'http:',
+				'data:',
+				'blob:'
+			],
+			scriptSrcElem: [
+				"'self'",
+				"'unsafe-inline'",
+				'https:',
+				'http:',
+				'data:',
+				'blob:'
+			],
+			scriptSrcAttr: [
+				"'self'",
+				"'unsafe-inline'",
+				'https:',
+				'http:'
 			],
 			styleSrc: [
 				"'self'",
-				"'unsafe-inline'", // Required for inline styles
-				'https://fonts.googleapis.com'
+				"'unsafe-inline'",
+				'https:',
+				'http:',
+				'data:'
+			],
+			styleSrcElem: [
+				"'self'",
+				"'unsafe-inline'",
+				'https:',
+				'http:',
+				'data:'
 			],
 			fontSrc: [
 				"'self'",
-				'https://fonts.gstatic.com'
+				'https:',
+				'http:',
+				'data:'
 			],
 			imgSrc: [
 				"'self'",
 				'data:',
-				'https://www.wikipedia.org',
-				'https://img.shields.io'
+				'blob:',
+				'https:',
+				'http:'
 			],
 			frameSrc: [
 				"'self'",
-				'https://en.m.wikipedia.org',
-				'https://www.youtube.com',
-				'https://platform.twitter.com'
+				'https:',
+				'http:',
+				'data:',
+				'blob:'
+			],
+			frameAncestors: [
+				"'self'"
 			],
 			connectSrc: [
 				"'self'",
-				'https://api.twitter.com',
-				'https://static.cloudflareinsights.com'
+				'https:',
+				'http:',
+				'ws:',
+				'wss:',
+				'data:'
+			],
+			mediaSrc: [
+				"'self'",
+				'https:',
+				'http:',
+				'data:',
+				'blob:'
+			],
+			objectSrc: [
+				"'self'",
+				'https:',
+				'http:',
+				'data:',
+				'blob:'
+			],
+			baseUri: ["'self'", 'https:', 'http:'],
+			formAction: ["'self'", 'https:', 'http:'],
+			workerSrc: [
+				"'self'",
+				'blob:',
+				'https:',
+				'http:'
+			],
+			manifestSrc: [
+				"'self'",
+				'https:',
+				'http:'
 			]
 		}
 	}
@@ -821,18 +913,19 @@ app.get('/', (req, res) => {
 
 app.get('/badge', async (req, res) => {
 	logger.info('Badge endpoint called');
-	// Validate that current_comma exists
-	if (!current_comma) {
-		logger.warn('Badge requested but service still initializing');
-		return res.status(503).send('Service initializing');
-	}
+	
+	// Use current_comma if available, otherwise fallback to START_NUMBER formatted
+	const badgeValue = current_comma || numberstring.comma(CONFIG.APP.START_NUMBER);
+	logger.debug('Badge value', { badgeValue, hasCurrentComma: !!current_comma, isFallback: !current_comma });
 
-	const badge_url = `https://${CONFIG.BADGE.ALLOWED_DOMAIN}/badge/Von%20Countdown-${encodeURIComponent(current_comma)}-a26d9e.svg`;
-	logger.debug('Fetching badge', { badgeUrl: badge_url, currentComma: current_comma });
+	const badge_url = `https://${CONFIG.BADGE.ALLOWED_DOMAIN}/badge/Von%20Countdown-${encodeURIComponent(badgeValue)}-a26d9e.svg`;
+	logger.debug('Fetching badge', { badgeUrl: badge_url, badgeValue });
 
 	try {
 		const response = await axios.get(badge_url, { responseType: 'stream' });
-		logger.info('Badge fetched successfully');
+		logger.info('Badge fetched successfully', { badgeValue });
+		res.setHeader('Content-Type', 'image/svg+xml');
+		res.setHeader('Cache-Control', 'public, max-age=300');
 		response.data.pipe(res);
 	} catch (error) {
 		logger.error('Badge fetch error', { 
