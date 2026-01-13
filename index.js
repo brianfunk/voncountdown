@@ -731,91 +731,106 @@ app.use((req, res, next) => {
 });
 
 // Security middleware with Content Security Policy
-// Permissive CSP for public site - allows external resources
+// Maximally permissive CSP for public site - allows all external resources
+// This prevents breakage if embedded sites change their domains/scripts
 app.use(helmet({
 	contentSecurityPolicy: {
 		directives: {
-			defaultSrc: ["'self'"],
+			defaultSrc: ["'self'", 'https:', 'http:', 'data:', 'blob:'],
 			scriptSrc: [
 				"'self'",
-				"'unsafe-inline'", // Allow inline scripts
-				'https://platform.twitter.com',
-				'https://*.twitter.com',
-				'https://x.com',
-				'https://*.x.com',
-				'https://code.jquery.com',
-				'https://static.cloudflareinsights.com',
-				'https://*.cloudflareinsights.com',
-				'https://www.youtube.com',
-				'https://*.youtube.com',
-				'https://*.doubleclick.net',
-				'https://*.google.com',
-				'https://*.googleapis.com',
-				'https://*.googlesyndication.com'
+				"'unsafe-inline'",
+				"'unsafe-eval'", // Allow eval for maximum compatibility
+				'https:',
+				'http:',
+				'data:',
+				'blob:'
 			],
 			scriptSrcElem: [
 				"'self'",
-				"'unsafe-inline'", // Allow inline script elements
-				'https://platform.twitter.com',
-				'https://*.twitter.com',
-				'https://x.com',
-				'https://*.x.com',
-				'https://code.jquery.com',
-				'https://static.cloudflareinsights.com',
-				'https://*.cloudflareinsights.com',
-				'https://www.youtube.com',
-				'https://*.youtube.com',
-				'https://*.doubleclick.net',
-				'https://*.google.com',
-				'https://*.googleapis.com',
-				'https://*.googlesyndication.com'
+				"'unsafe-inline'",
+				'https:',
+				'http:',
+				'data:',
+				'blob:'
+			],
+			scriptSrcAttr: [
+				"'self'",
+				"'unsafe-inline'",
+				'https:',
+				'http:'
 			],
 			styleSrc: [
 				"'self'",
-				"'unsafe-inline'", // Required for inline styles
-				'https://fonts.googleapis.com'
+				"'unsafe-inline'",
+				'https:',
+				'http:',
+				'data:'
+			],
+			styleSrcElem: [
+				"'self'",
+				"'unsafe-inline'",
+				'https:',
+				'http:',
+				'data:'
 			],
 			fontSrc: [
 				"'self'",
-				'https://fonts.gstatic.com',
-				'https://fonts.googleapis.com'
+				'https:',
+				'http:',
+				'data:'
 			],
 			imgSrc: [
 				"'self'",
 				'data:',
+				'blob:',
 				'https:',
-				'http:' // Allow all images from any source
+				'http:'
 			],
 			frameSrc: [
 				"'self'",
 				'https:',
-				'http:' // Allow all iframes (public site)
+				'http:',
+				'data:',
+				'blob:'
 			],
 			frameAncestors: [
 				"'self'"
 			],
 			connectSrc: [
 				"'self'",
-				'https://api.twitter.com',
-				'https://api.x.com',
-				'https://*.x.com',
-				'https://static.cloudflareinsights.com',
-				'https://*.cloudflareinsights.com',
-				'https://www.youtube.com',
-				'https://youtube.com',
-				'https://*.youtube.com',
-				'https://*.googleapis.com',
-				'https://*.doubleclick.net',
-				'https://*.google.com',
-				'https://*.googleadservices.com',
-				'https://*.googlesyndication.com',
-				'https://sesameworkshop.org',
-				'https://*.sesameworkshop.org'
+				'https:',
+				'http:',
+				'ws:',
+				'wss:',
+				'data:'
 			],
 			mediaSrc: [
 				"'self'",
-				'https://www.youtube.com',
-				'https://*.youtube.com'
+				'https:',
+				'http:',
+				'data:',
+				'blob:'
+			],
+			objectSrc: [
+				"'self'",
+				'https:',
+				'http:',
+				'data:',
+				'blob:'
+			],
+			baseUri: ["'self'", 'https:', 'http:'],
+			formAction: ["'self'", 'https:', 'http:'],
+			workerSrc: [
+				"'self'",
+				'blob:',
+				'https:',
+				'http:'
+			],
+			manifestSrc: [
+				"'self'",
+				'https:',
+				'http:'
 			]
 		}
 	}
