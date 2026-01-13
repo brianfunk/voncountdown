@@ -46,9 +46,10 @@
 //*******************************************************************
 
 const numberstring = require('numberstring');
-const async = require('async');
 const express = require('express');
 const exphbs = require('express-handlebars');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, ScanCommand, PutCommand } = require('@aws-sdk/lib-dynamodb');
@@ -56,10 +57,62 @@ const { TwitterApi } = require('twitter-api-v2');
 
 require('dotenv').config();
 
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+	console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+	// Don't exit - allow server to continue running
+});
+
+//*******************************************************************
+// Configuration Constants
+//*******************************************************************
+
+const CONFIG = {
+	AWS: {
+		REGION: process.env.AWS_REGION || 'us-east-1',
+		TABLE_NAME: process.env.DYNAMODB_TABLE || 'voncountdown',
+	},
+	APP: {
+		PORT: process.env.PORT || 8080,
+		START_NUMBER: 1111373357579,
+	},
+	COUNTDOWN: {
+		DELAY_MIN_MS: 1234567,
+		DELAY_MAX_MS: 7654321,
+		PHRASE_PROBABILITY: 4, // 1 in 5 chance (when random(0,4) === 4)
+		ERROR_RETRY_DELAY_MS: 60000, // 1 minute
+	},
+	BADGE: {
+		ALLOWED_DOMAIN: 'img.shields.io',
+	},
+};
+
+//*******************************************************************
+// Environment Variable Validation
+//*******************************************************************
+
+const requiredEnvVars = [
+	'AWS_ACCESS_KEY_ID',
+	'AWS_SECRET_ACCESS_KEY',
+	'TWITTER_API_KEY',
+	'TWITTER_API_SECRET',
+	'TWITTER_ACCESS_TOKEN',
+	'TWITTER_ACCESS_TOKEN_SECRET',
+];
+
+requiredEnvVars.forEach(varName => {
+	if (!process.env[varName]) {
+		console.error(`ERROR: Missing required environment variable: ${varName}`);
+		process.exit(1);
+	}
+});
+
+//*******************************************************************
+// AWS DynamoDB Client Setup
 //*******************************************************************
 
 const client = new DynamoDBClient({
-	region: 'us-east-1',
+	region: CONFIG.AWS.REGION,
 	credentials: {
 		accessKeyId: process.env.AWS_ACCESS_KEY_ID,
 		secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
@@ -69,14 +122,9 @@ const client = new DynamoDBClient({
 const docClient = DynamoDBDocumentClient.from(client);
 
 //*******************************************************************
-
-const PORT = process.env.PORT || 12345;
-
+// Twitter API Client Setup
 //*******************************************************************
 
- 
-
-// Initialize Twitter API v2 client with OAuth 2.0 User Context authentication
 const twitterClient = new TwitterApi({
 	appKey: process.env.TWITTER_API_KEY,
 	appSecret: process.env.TWITTER_API_SECRET,
@@ -85,6 +133,8 @@ const twitterClient = new TwitterApi({
 });
 
 //*******************************************************************
+// Application State
+//*******************************************************************
 
 let current_number;
 let current_string;
@@ -92,29 +142,45 @@ let current_comma;
 let current_twext;
 
 //*******************************************************************
+// Utility Functions
+//*******************************************************************
+
+/**
+ * Generates a random integer between min and max (inclusive)
+ * @param {number} min - Minimum value
+ * @param {number} max - Maximum value
+ * @returns {number} Random integer
+ */
+function randomInt(min, max) {
+	return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+//*******************************************************************
+// Initialization
+//*******************************************************************
 
 (async () => {
 	try {
-
-		// Initialize the countdown from the lowest existing number in DynamoDB, or start fresh if no record exists.
+		// Initialize the countdown from the lowest existing number in DynamoDB, 
+		// or start fresh if no record exists.
 		const params = {
-			TableName: 'voncountdown',
+			TableName: CONFIG.AWS.TABLE_NAME,
 		};
 
 		const data = await docClient.send(new ScanCommand(params));
 
-		console.log('data : ' + JSON.stringify(data) );
+		console.log('DynamoDB scan result:', JSON.stringify(data));
 
 		if (data.Items.length === 0) {
-			console.log('no items found in the table');
+			console.log('No items found in table, initializing with start number');
 
-			current_number = 1111373357579;
+			current_number = CONFIG.APP.START_NUMBER;
 			current_comma = numberstring.comma(current_number);
 			current_string = numberstring(current_number, { cap: 'title', punc: '!' });
 
 			// Insert a record if no items are found
 			const insertParams = {
-				TableName: 'voncountdown',
+				TableName: CONFIG.AWS.TABLE_NAME,
 				Item: {
 					number: current_number,
 					string: current_string,
@@ -125,43 +191,36 @@ let current_twext;
 
 			await docClient.send(new PutCommand(insertParams));
 
-			console.log('inserted new record : ' + current_number);
+			console.log('Inserted new record:', current_number);
 
 		} else {
-
 			const lowest_number = data.Items.sort((a, b) => a.number - b.number)[0];
-			console.log('lowest_number : ' + JSON.stringify(lowest_number));
+			console.log('Lowest number found:', JSON.stringify(lowest_number));
 
 			current_number = lowest_number.number;
 			current_comma = numberstring.comma(current_number);
-			current_string = numberstring(parseInt(current_number), {'cap': 'title', 'punc': '!'});
+			current_string = numberstring(parseInt(current_number), { 'cap': 'title', 'punc': '!' });
 
-			console.log('load number : ' + current_number);
-			console.log('load string : ' + current_string );
-			console.log('load commma : ' + current_comma );
+			console.log('Loaded number:', current_number);
+			console.log('Loaded string:', current_string);
+			console.log('Loaded comma:', current_comma);
 
 			countdown();
 		}
 	} catch (error) {
-		console.error(error.message);
+		console.error('Initialization error:', error.message);
+		console.error(error.stack);
+		console.warn('Continuing without DynamoDB connection. Web server will still run.');
+		// Don't exit - allow web server to run even if DynamoDB fails
 	}
 })();
 
 //*******************************************************************
-
-// Generates a random integer between a specified minimum and maximum value, inclusive.
-var random = function(min, max) {
-	
-	var rand = Math.floor(Math.random() * (max - min + 1)) + min;	
-	console.log('rand : ' + rand );
-	
-	return rand;	
-}
-
+// Tweet Content Data
 //*******************************************************************
 
 // Phrases for adding random humorous or engaging variety to tweets.
-var short_phrase = [
+const short_phrase = [
 	'Ha ha ha!!',
 	'Ah ah ah!!',
 	'Ah ha ha!!',
@@ -198,7 +257,7 @@ var short_phrase = [
 ];
 
 // List of random short tags used for Twitter posts
-var short_tags = [
+const short_tags = [
 	'@CountVonCount',
 	'@CountVonCount',
 	'@CountVonCount',
@@ -237,113 +296,112 @@ var short_tags = [
 ];
 
 //*******************************************************************
-
-var countdown = function() {	
-	// Main function that decrements the current number, tweets the new count, 
-	// updates the record in DynamoDB, and schedules the next countdown.
-	console.log('countdown start ' );
-	
-	current_number--;	
-	current_string = numberstring(current_number, {'cap': 'title', 'punc': '!'});
-	current_comma = numberstring.comma(current_number);
-	
-	console.log('updated number : ' + current_number );
-	console.log('updated string : ' + current_string );
-	console.log('updated comma : ' + current_comma );
-	
-	async.series(
-		[
-			function(callback){
-				// Step 1: Post a tweet with the current count
-				console.log('tweetdown ' );
-				
-				current_twext = current_string;
-				
-				if ( random(0,4) === 4 ) {					
-
-					var twext_phrase = short_phrase[random(0,short_phrase.length-1)];
-					var twext_tag = short_tags[random(0,short_tags.length-1)];
-					
-					console.log('twext_phrase : ' + twext_phrase );
-					console.log('twext_tag : ' + twext_tag );	
-
-					current_twext = current_comma +'! '+ twext_phrase + ' '+ twext_tag;
-				}		
-
-				console.log('current_twext : ' + current_twext );	
-				
-				
-				(async () => {
-					// Send the tweet
-					let tweet = await twitterClient.v2.tweet(current_twext);
-
-					console.log('tweet posted : ', tweet);
-
-					callback(null, current_twext);
-				})();
-				
-			},
-			function(callback){
-				// Step 2: Update the DynamoDB record with the new number
-				console.log('update number');				
-
-				(async () => {
-					// Insert a record with new number
-					const insertParams = {
-						TableName: 'voncountdown',
-						Item: {
-							number: current_number,
-							string: current_string,
-							datetime: new Date().toISOString(),
-							status: true,
-						},
-					};
-
-					await docClient.send(new PutCommand(insertParams));
-
-					console.log('inserted new record : ' + current_number);
-
-					callback();
-
-				})();
-
-			}
-		],
-		function(err, results){
-			
-			var result_status = 'success';
-			
-			if (err) {				
-				result_status = 'error';
-				console.error('countdown series error : ' + JSON.stringify(err));
-			}
-			
-			console.log('update results : ' + JSON.stringify(results) );
-			
-			//*******************************************************************
-
-			var delay = random(1234567, 7654321);
-			console.log('delay : ' + delay );
-			console.log('delay hours : ' + delay / 3600000 );
-
-			setTimeout(function() {
-				countdown();
-			}, delay);	
-			
-		}
-	);
-};
-
+// Countdown Function
 //*******************************************************************
 
-var app = express();
- 
-app.engine('handlebars', exphbs({defaultLayout: 'main'}));
+/**
+ * Main function that decrements the current number, tweets the new count,
+ * updates the record in DynamoDB, and schedules the next countdown.
+ */
+async function countdown() {
+	console.log('Countdown start');
+
+	current_number--;
+	current_string = numberstring(current_number, { 'cap': 'title', 'punc': '!' });
+	current_comma = numberstring.comma(current_number);
+
+	console.log('Updated number:', current_number);
+	console.log('Updated string:', current_string);
+	console.log('Updated comma:', current_comma);
+
+	try {
+		// Step 1: Post a tweet with the current count
+		console.log('Preparing tweet');
+
+		current_twext = current_string;
+
+		if (randomInt(0, CONFIG.COUNTDOWN.PHRASE_PROBABILITY) === CONFIG.COUNTDOWN.PHRASE_PROBABILITY) {
+			const twext_phrase = short_phrase[randomInt(0, short_phrase.length - 1)];
+			const twext_tag = short_tags[randomInt(0, short_tags.length - 1)];
+
+			console.log('Tweet phrase:', twext_phrase);
+			console.log('Tweet tag:', twext_tag);
+
+			current_twext = `${current_comma}! ${twext_phrase} ${twext_tag}`;
+		}
+
+		console.log('Tweet text:', current_twext);
+
+		// Send the tweet
+		const tweet = await twitterClient.v2.tweet(current_twext);
+		console.log('Tweet posted:', tweet);
+
+		// Step 2: Update the DynamoDB record with the new number
+		console.log('Updating DynamoDB');
+
+		const insertParams = {
+			TableName: CONFIG.AWS.TABLE_NAME,
+			Item: {
+				number: current_number,
+				string: current_string,
+				datetime: new Date().toISOString(),
+				status: true,
+			},
+		};
+
+		await docClient.send(new PutCommand(insertParams));
+		console.log('Inserted new record:', current_number);
+
+		// Schedule next countdown
+		const delay = randomInt(CONFIG.COUNTDOWN.DELAY_MIN_MS, CONFIG.COUNTDOWN.DELAY_MAX_MS);
+		const delayHours = delay / 3600000;
+		console.log(`Delay: ${delay}ms (${delayHours.toFixed(2)} hours)`);
+
+		setTimeout(() => countdown(), delay);
+
+	} catch (error) {
+		console.error('Countdown error:', error.message);
+		console.error('Error stack:', error.stack);
+
+		// Retry after shorter delay on error
+		console.log(`Retrying in ${CONFIG.COUNTDOWN.ERROR_RETRY_DELAY_MS / 1000} seconds...`);
+		setTimeout(() => countdown(), CONFIG.COUNTDOWN.ERROR_RETRY_DELAY_MS);
+	}
+}
+
+//*******************************************************************
+// Express Application Setup
+//*******************************************************************
+
+const app = express();
+
+app.engine('handlebars', exphbs.engine({ defaultLayout: 'main' }));
 app.set('view engine', 'handlebars');
 
+// Security middleware
+app.use(helmet());
+
+// Rate limiting
+const limiter = rateLimit({
+	windowMs: 15 * 60 * 1000, // 15 minutes
+	max: 100, // limit each IP to 100 requests per windowMs
+	message: 'Too many requests from this IP, please try again later.'
+});
+app.use(limiter);
+
 app.use(express.static('public'));
- 
-app.get('/', function (req, res) {
+
+// Request logging middleware
+app.use((req, res, next) => {
+	console.log(`${new Date().toISOString()} ${req.method} ${req.path}`);
+	next();
+});
+
+//*******************************************************************
+// Routes
+//*******************************************************************
+
+app.get('/', (req, res) => {
 	res.render('home', {
 		current_number: current_number,
 		current_string: current_string,
@@ -351,17 +409,57 @@ app.get('/', function (req, res) {
 	});
 });
 
-app.get('/badge', async function(req,res) {
-	var badge_url = 'https://img.shields.io/badge/Von%20Countdown-'+ encodeURIComponent(current_comma) +'-a26d9e.svg';
-	//console.log('badge_url : ' + badge_url );
+app.get('/badge', async (req, res) => {
+	// Validate that current_comma exists
+	if (!current_comma) {
+		return res.status(503).send('Service initializing');
+	}
+
+	const badge_url = `https://${CONFIG.BADGE.ALLOWED_DOMAIN}/badge/Von%20Countdown-${encodeURIComponent(current_comma)}-a26d9e.svg`;
+
 	try {
 		const response = await axios.get(badge_url, { responseType: 'stream' });
 		response.data.pipe(res);
 	} catch (error) {
+		console.error('Badge fetch error:', error.message);
 		res.status(500).send('Error fetching badge');
 	}
 });
- 
-app.listen(PORT);
+
+app.get('/health', (req, res) => {
+	res.json({
+		status: 'ok',
+		current_number: current_number || null,
+		current_string: current_string || null,
+		current_comma: current_comma || null,
+		uptime: process.uptime(),
+		timestamp: new Date().toISOString()
+	});
+});
+
+//*******************************************************************
+// Server Startup
+//*******************************************************************
+
+const server = app.listen(CONFIG.APP.PORT, () => {
+	console.log(`Server running on port ${CONFIG.APP.PORT}`);
+});
+
+// Graceful shutdown handler
+process.on('SIGTERM', () => {
+	console.log('SIGTERM received, shutting down gracefully');
+	server.close(() => {
+		console.log('Process terminated');
+		process.exit(0);
+	});
+});
+
+process.on('SIGINT', () => {
+	console.log('SIGINT received, shutting down gracefully');
+	server.close(() => {
+		console.log('Process terminated');
+		process.exit(0);
+	});
+});
 
 //*******************************************************************
