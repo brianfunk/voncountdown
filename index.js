@@ -49,7 +49,7 @@ const numberstring = require('numberstring');
 const async = require('async');
 const express = require('express');
 const exphbs = require('express-handlebars');
-const request = require('request');
+const axios = require('axios');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, ScanCommand, PutCommand } = require('@aws-sdk/lib-dynamodb');
 const { TwitterApi } = require('twitter-api-v2');
@@ -351,10 +351,15 @@ app.get('/', function (req, res) {
 	});
 });
 
-app.get('/badge', function(req,res) {
+app.get('/badge', async function(req,res) {
 	var badge_url = 'https://img.shields.io/badge/Von%20Countdown-'+ encodeURIComponent(current_comma) +'-a26d9e.svg';
 	//console.log('badge_url : ' + badge_url );
-	request(badge_url).pipe(res);
+	try {
+		const response = await axios.get(badge_url, { responseType: 'stream' });
+		response.data.pipe(res);
+	} catch (error) {
+		res.status(500).send('Error fetching badge');
+	}
 });
  
 app.listen(PORT);
