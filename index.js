@@ -50,21 +50,23 @@ const async = require('async');
 const express = require('express');
 const exphbs = require('express-handlebars');
 const request = require('request');
-const AWS = require('aws-sdk');
+const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
+const { DynamoDBDocumentClient, ScanCommand, PutCommand } = require('@aws-sdk/lib-dynamodb');
 const { TwitterApi } = require('twitter-api-v2');
 
 require('dotenv').config();
 
 //*******************************************************************
 
-AWS.config.update({
-	accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-	secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-	region: 'us-east-1', // specify your AWS region
+const client = new DynamoDBClient({
+	region: 'us-east-1',
+	credentials: {
+		accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+		secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+	},
 });
 
- 
-const docClient = new AWS.DynamoDB.DocumentClient();
+const docClient = DynamoDBDocumentClient.from(client);
 
 //*******************************************************************
 
@@ -99,7 +101,7 @@ let current_twext;
 			TableName: 'voncountdown',
 		};
 
-		const data = await docClient.scan(params).promise();
+		const data = await docClient.send(new ScanCommand(params));
 
 		console.log('data : ' + JSON.stringify(data) );
 
@@ -121,7 +123,7 @@ let current_twext;
 				},
 			};
 
-			await docClient.put(insertParams).promise();
+			await docClient.send(new PutCommand(insertParams));
 
 			console.log('inserted new record : ' + current_number);
 
@@ -297,7 +299,7 @@ var countdown = function() {
 						},
 					};
 
-					await docClient.put(insertParams).promise();
+					await docClient.send(new PutCommand(insertParams));
 
 					console.log('inserted new record : ' + current_number);
 
