@@ -36,6 +36,9 @@
 		"url": "https://github.com/brianfunk/voncountdown/issues"
 	},
 	"homepage": "https://github.com/brianfunk/voncountdown#readme",
+	"engines": {
+		"node": ">=20.0.0"
+	},
 	"dependencies": {
 		"@aws-sdk/client-dynamodb": "^3.980.0",
 		"@aws-sdk/lib-dynamodb": "^3.980.0",
@@ -48,7 +51,7 @@
 		"express-rate-limit": "^7.4.1",
 		"helmet": "^8.0.0",
 		"node-cache": "^5.1.2",
-		"numberstring": "github:brianfunk/numberstring#dev",
+		"numberstring": "git+https://github.com/brianfunk/numberstring.git#dev",
 		"twitter-api-v2": "^1.28.0"
 	},
 	"devDependencies": {
