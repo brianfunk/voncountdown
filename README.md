@@ -1,4 +1,4 @@
-[![Count Von Countdown](https://voncountdown.herokuapp.com/badge)](https://voncountdown.herokuapp.com)
+[![Count Von Countdown](https://voncountdown.com/badge)](https://voncountdown.com)
 [![Semver](https://img.shields.io/badge/SemVer-2.0-blue.svg)](http://semver.org/spec/v2.0.0.html)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg?maxAge=2592000)](https://opensource.org/licenses/MIT)
 [![Open Source Love](https://badges.frapsoft.com/os/v1/open-source.svg?v=103)](https://github.com/ellerbrock/open-source-badge/)
@@ -24,7 +24,7 @@ A Twitter bot that counts down from a very large number, posting tweets with the
 
 ### Prerequisites
 
-- Node.js 18+ 
+- Node.js 20+ 
 - AWS Account with DynamoDB access
 - Twitter Developer Account with API v2 access
 
@@ -237,7 +237,7 @@ git push heroku main
 ### Docker
 
 ```dockerfile
-FROM node:18-alpine
+FROM node:20-alpine
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --only=production

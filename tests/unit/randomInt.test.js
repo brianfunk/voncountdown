@@ -1,4 +1,4 @@
-const { randomInt } = require('../../src/utils/random');
+import { randomInt } from '../../src/utils/random.js';
 
 describe('randomInt', () => {
 	test('should return a number within the specified range', () => {

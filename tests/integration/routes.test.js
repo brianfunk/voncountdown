@@ -1,4 +1,4 @@
-const request = require('supertest');
+import request from 'supertest';
 
 // Mock the app - in a real scenario, you'd export the app from index.js
 // For now, we'll test the routes indirectly
