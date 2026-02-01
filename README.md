@@ -1,4 +1,4 @@
-[![Count Von Countdown](https://img.shields.io/badge/Count%20Von-Countdown-purple.svg)](https://github.com/brianfunk/voncountdown)
+[![Count Von Countdown](https://voncountdown.com/badge)](https://voncountdown.com)
 [![Semver](https://img.shields.io/badge/SemVer-2.0-blue.svg)](http://semver.org/spec/v2.0.0.html)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg?maxAge=2592000)](https://opensource.org/licenses/MIT)
 [![Open Source Love](https://badges.frapsoft.com/os/v1/open-source.svg?v=103)](https://github.com/ellerbrock/open-source-badge/)
