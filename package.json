@@ -1,14 +1,15 @@
 {
 	"name": "voncountdown",
-	"version": "0.0.1",
+	"version": "1.0.0",
 	"description": "Count Von Countdown",
+	"type": "module",
 	"main": "index.js",
 	"scripts": {
 		"start": "node index.js",
 		"dev": "nodemon index.js",
-		"test": "jest",
-		"test:watch": "jest --watch",
-		"test:coverage": "jest --coverage"
+		"test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+		"test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
+		"test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage"
 	},
 	"repository": {
 		"type": "git",
@@ -47,7 +48,7 @@
 		"express-rate-limit": "^7.4.1",
 		"helmet": "^8.0.0",
 		"node-cache": "^5.1.2",
-		"numberstring": "^0.2.0",
+		"numberstring": "github:brianfunk/numberstring#dev",
 		"twitter-api-v2": "^1.28.0"
 	},
 	"devDependencies": {

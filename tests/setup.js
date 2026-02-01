@@ -15,6 +15,3 @@ process.env.TWITTER_API_KEY = 'test-api-key';
 process.env.TWITTER_API_SECRET = 'test-api-secret';
 process.env.TWITTER_ACCESS_TOKEN = 'test-access-token';
 process.env.TWITTER_ACCESS_TOKEN_SECRET = 'test-access-token-secret';
-
-// Increase timeout for async operations
-jest.setTimeout(10000);

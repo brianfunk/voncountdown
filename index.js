@@ -41,24 +41,21 @@
 
 //*******************************************************************
 
-'use strict';
+import numberstring, { comma } from 'numberstring';
+import express from 'express';
+import exphbs from 'express-handlebars';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import compression from 'compression';
+import timeout from 'connect-timeout';
+import axios from 'axios';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, ScanCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { TwitterApi } from 'twitter-api-v2';
+import NodeCache from 'node-cache';
+import dotenv from 'dotenv';
 
-//*******************************************************************
-
-const numberstring = require('numberstring');
-const express = require('express');
-const exphbs = require('express-handlebars');
-const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
-const compression = require('compression');
-const timeout = require('connect-timeout');
-const axios = require('axios');
-const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, ScanCommand, PutCommand } = require('@aws-sdk/lib-dynamodb');
-const { TwitterApi } = require('twitter-api-v2');
-const NodeCache = require('node-cache');
-
-require('dotenv').config();
+dotenv.config();
 
 //*******************************************************************
 // Simple Logger for App Runner/CloudWatch
@@ -267,7 +264,7 @@ let current_twext;
 // Utility Functions
 //*******************************************************************
 
-const { randomInt } = require('./src/utils/random');
+import { randomInt } from './src/utils/random.js';
 
 //*******************************************************************
 // Initialization
@@ -317,7 +314,7 @@ const { randomInt } = require('./src/utils/random');
 			});
 
 			current_number = CONFIG.APP.START_NUMBER;
-			current_comma = numberstring.comma(current_number);
+			current_comma = comma(current_number);
 			current_string = numberstring(current_number, { cap: 'title', punc: '!' });
 
 			logger.info('Generated initial state', { 
@@ -360,7 +357,7 @@ const { randomInt } = require('./src/utils/random');
 			}
 
 			current_number = number;
-			current_comma = numberstring.comma(current_number);
+			current_comma = comma(current_number);
 			current_string = numberstring(current_number, { 'cap': 'title', 'punc': '!' });
 
 			logger.info('Generated state from DynamoDB', { 
@@ -545,7 +542,7 @@ async function countdown() {
 	logger.info('Decrementing number', { from: current_number, to: current_number - 1 });
 	current_number--;
 	current_string = numberstring(current_number, { 'cap': 'title', 'punc': '!' });
-	current_comma = numberstring.comma(current_number);
+	current_comma = comma(current_number);
 
 	logger.info('Updated countdown state', { 
 		number: current_number, 
@@ -950,7 +947,7 @@ app.get('/badge', async (req, res) => {
 	logger.info('Badge endpoint called');
 	
 	// Use current_comma if available, otherwise fallback to START_NUMBER formatted
-	const badgeValue = current_comma || numberstring.comma(CONFIG.APP.START_NUMBER);
+	const badgeValue = current_comma || comma(CONFIG.APP.START_NUMBER);
 	logger.debug('Badge value', { badgeValue, hasCurrentComma: !!current_comma, isFallback: !current_comma });
 
 	const badge_url = `https://${CONFIG.BADGE.ALLOWED_DOMAIN}/badge/Von%20Countdown-${encodeURIComponent(badgeValue)}-a26d9e.svg`;
@@ -1064,6 +1061,6 @@ if (process.env.NODE_ENV !== 'test') {
 }
 
 // Export app for testing
-module.exports = app;
+export default app;
 
 //*******************************************************************
