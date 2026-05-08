@@ -42,7 +42,7 @@
 	"dependencies": {
 		"@aws-sdk/client-dynamodb": "^3.980.0",
 		"@aws-sdk/lib-dynamodb": "^3.980.0",
-		"axios": "^1.7.9",
+		"axios": "^1.15.2",
 		"compression": "^1.7.5",
 		"connect-timeout": "^1.9.0",
 		"dotenv": "^17.2.3",
