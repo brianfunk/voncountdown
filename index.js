@@ -554,6 +554,10 @@ app.set('trust proxy', 1);
 app.engine('handlebars', exphbs.engine({ defaultLayout: 'main' }));
 app.set('view engine', 'handlebars');
 
+// Cache-busting token for static assets. Changes on every process start, so a
+// deploy always makes browsers fetch the new stylesheet instead of a cached one.
+app.locals.assetVersion = Date.now().toString(36);
+
 // Compression middleware
 app.use(compression());
 
@@ -600,7 +604,10 @@ const healthLimiter = rateLimit({
 
 app.use(limiter);
 
-app.use(express.static('public'));
+app.use(express.static('public', {
+	maxAge: '1d', // versioned via ?v= so a day of caching is safe
+	etag: true,
+}));
 
 // Request logging middleware
 app.use((req, res, next) => {
