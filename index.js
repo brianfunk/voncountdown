@@ -625,11 +625,6 @@ app.use((req, res, next) => {
 // Routes
 //*******************************************************************
 
-// Favicon route to prevent 404 errors
-app.get('/favicon.ico', (req, res) => {
-	res.status(204).end();
-});
-
 app.get('/', (req, res) => {
 	const now = Date.now();
 	res.render('home', {
