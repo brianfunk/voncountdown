@@ -69,7 +69,7 @@ TWITTER_ACCESS_TOKEN_SECRET=your_twitter_access_token_secret
 5. Create DynamoDB table:
    - Table name: `voncountdown` (or set `DYNAMODB_TABLE` env var)
    - Partition key: `number` (Number)
-   - No sort key required
+   - Sort key: `datetime` (String)
 
 6. Check the X credentials and credit balance:
 ```bash
