@@ -154,12 +154,14 @@ const CONFIG = {
 		PORT: process.env.PORT || 8080,
 		START_NUMBER: 1111373357579,
 		ENV: env,
+		FEED_SIZE: 10, // recent posts shown on the home page
+		X_URL: 'https://x.com/VonCountdown',
 	},
 	COUNTDOWN: {
-		DELAY_MIN_MS: 1234567, // ~14 days
-		DELAY_MAX_MS: 7654321, // ~88 days
-		PHRASE_PROBABILITY: 4, // 1 in 5 chance (when random(0,4) === 4)
-		ERROR_RETRY_DELAY_MS: 60000, // 1 minute
+		DELAY_MIN_MS: 2 * 60 * 60 * 1000, // 2 hours
+		DELAY_MAX_MS: 8 * 60 * 60 * 1000, // 8 hours (about 4 to 6 posts a day)
+		BOOT_DELAY_MS: Number(process.env.BOOT_DELAY_MS) || 5 * 60 * 1000, // wait 5 minutes after startup before the first post
+		DRY_RUN: process.env.DRY_RUN === '1' || process.env.DRY_RUN === 'true', // log instead of posting/writing
 	},
 	BADGE: {
 		ALLOWED_DOMAIN: 'img.shields.io',
@@ -255,16 +257,103 @@ logger.info('Cache initialized');
 // Application State
 //*******************************************************************
 
+// The latest number the Count has actually posted (or the start number
+// before the first post). Only changes after a successful post.
 let current_number;
 let current_string;
 let current_comma;
-let current_twext;
+
+// Bot health, surfaced on /health so a stuck Count is obvious.
+const botStatus = {
+	last_post_at: null,
+	last_post_number: null,
+	next_post_at: null,
+	last_error: null,
+	consecutive_failures: 0,
+	dry_run: CONFIG.COUNTDOWN.DRY_RUN,
+};
+
+// Recent posts (lowest number first, i.e. newest first) for the website feed.
+let recent_posts = [];
+let first_post_at = null;
+let post_count = 0;
 
 //*******************************************************************
 // Utility Functions
 //*******************************************************************
 
 import { randomInt } from './src/utils/random.js';
+import { buildTweetText } from './src/countdown/tweetText.js';
+import { nextRetryDelay } from './src/countdown/backoff.js';
+import { computeStats, relativeTime } from './src/countdown/stats.js';
+
+/**
+ * Formats a number into the word and comma forms used everywhere.
+ * @param {number} number
+ * @returns {{ number: number, string: string, comma: string }}
+ */
+function formatNumber(number) {
+	return {
+		number,
+		string: numberstring(number, { cap: 'title', punc: '!' }),
+		comma: comma(number),
+	};
+}
+
+/**
+ * Reads every row from the countdown table, following pagination.
+ * A single Scan page is capped at 1 MB and the table is bigger than that.
+ * @returns {Promise<Array<{ number: number, string?: string, datetime?: string }>>}
+ */
+async function scanAllItems() {
+	const items = [];
+	let ExclusiveStartKey;
+	let pages = 0;
+	do {
+		const page = await docClient.send(new ScanCommand({
+			TableName: CONFIG.AWS.TABLE_NAME,
+			...(ExclusiveStartKey && { ExclusiveStartKey }),
+		}));
+		items.push(...(page.Items || []));
+		ExclusiveStartKey = page.LastEvaluatedKey;
+		pages++;
+	} while (ExclusiveStartKey);
+	logger.info('DynamoDB scan complete', { pages, itemCount: items.length });
+	return items;
+}
+
+/**
+ * Records a successful post in memory (state, feed, stats).
+ * @param {{ number: number, string: string, comma: string }} formatted
+ * @param {string} datetime
+ */
+function recordPost(formatted, datetime) {
+	current_number = formatted.number;
+	current_string = formatted.string;
+	current_comma = formatted.comma;
+	recent_posts.unshift({ number: formatted.number, string: formatted.string, comma: formatted.comma, datetime });
+	recent_posts = recent_posts.slice(0, CONFIG.APP.FEED_SIZE);
+	post_count++;
+	first_post_at = first_post_at || datetime;
+	botStatus.last_post_at = datetime;
+	botStatus.last_post_number = formatted.number;
+	cache.set('countdown_state', { number: current_number, comma: current_comma, string: current_string });
+}
+
+/**
+ * Schedules the next countdown attempt and records when it will run.
+ * @param {number} delayMs
+ */
+function scheduleCountdown(delayMs) {
+	botStatus.next_post_at = new Date(Date.now() + delayMs).toISOString();
+	logger.info('Next countdown scheduled', {
+		delayMs,
+		delayMinutes: Math.round(delayMs / 60000),
+		delayHours: (delayMs / 3600000).toFixed(2),
+		nextRunTime: botStatus.next_post_at,
+	});
+	setTimeout(() => countdown(), delayMs);
+}
 
 //*******************************************************************
 // Initialization
@@ -273,497 +362,181 @@ import { randomInt } from './src/utils/random.js';
 (async () => {
 	logger.info('=== INITIALIZATION START ===');
 	try {
-		// Initialize the countdown from the lowest existing number in DynamoDB, 
-		// or start fresh if no record exists.
-		logger.info('Checking cache for existing countdown state');
-		const params = {
-			TableName: CONFIG.AWS.TABLE_NAME,
-		};
-
-		// Check cache first to avoid expensive scan operation
-		const cachedState = cache.get('countdown_state');
-		if (cachedState) {
-			logger.info('=== USING CACHED STATE ===');
-			logger.info('Using cached countdown state');
-			current_number = cachedState.number;
-			current_comma = cachedState.comma;
-			current_string = cachedState.string;
-			logger.info('Loaded countdown state from cache', { 
-				number: current_number, 
-				string: current_string, 
-				comma: current_comma 
-			});
-			logger.info('Starting countdown from cached state');
-			countdown();
-			return;
-		}
-
-		// If not in cache, scan DynamoDB (expensive operation)
-		// TODO: Optimize by using Query with GSI or storing current number separately
-		logger.info('=== SCANNING DYNAMODB ===');
 		logger.info('Scanning DynamoDB table', { tableName: CONFIG.AWS.TABLE_NAME });
-		const data = await docClient.send(new ScanCommand(params));
+		const items = await scanAllItems();
 
-		logger.info('=== DYNAMODB SCAN COMPLETE ===');
-		logger.info('DynamoDB scan result', { itemCount: data.Items.length });
-
-		if (data.Items.length === 0) {
-			logger.info('=== NO ITEMS FOUND - INITIALIZING WITH START NUMBER ===');
-			logger.info('No items found in table, initializing with start number', { 
-				startNumber: CONFIG.APP.START_NUMBER 
+		if (items.length === 0) {
+			logger.info('No items found in table, initializing with start number', {
+				startNumber: CONFIG.APP.START_NUMBER,
 			});
-
-			current_number = CONFIG.APP.START_NUMBER;
-			current_comma = comma(current_number);
-			current_string = numberstring(current_number, { cap: 'title', punc: '!' });
-
-			logger.info('Generated initial state', { 
-				number: current_number, 
-				comma: current_comma, 
-				string: current_string 
-			});
-
-			// Insert a record if no items are found
-			const insertParams = {
+			const formatted = formatNumber(CONFIG.APP.START_NUMBER);
+			const datetime = new Date().toISOString();
+			await docClient.send(new PutCommand({
 				TableName: CONFIG.AWS.TABLE_NAME,
-				Item: {
-					number: current_number,
-					string: current_string,
-					datetime: new Date().toISOString(),
-					status: true,
-				},
-			};
-
-			logger.info('Inserting initial record into DynamoDB');
-			await docClient.send(new PutCommand(insertParams));
-
-			logger.info('=== INITIAL RECORD INSERTED ===');
-			logger.info('Inserted new record', { number: current_number });
-
+				Item: { number: formatted.number, string: formatted.string, datetime, status: true },
+			}));
+			recordPost(formatted, datetime);
+			logger.info('Inserted initial record', { number: current_number });
 		} else {
-			logger.info('=== LOADING EXISTING STATE ===');
-			logger.info('Found existing items', { itemCount: data.Items.length });
-			const lowest_number = data.Items.sort((a, b) => a.number - b.number)[0];
-			logger.info('Lowest number found', { number: lowest_number.number });
-
-			// Validate number format from DynamoDB
-			const number = parseInt(lowest_number.number);
-			if (isNaN(number) || !isFinite(number)) {
-				logger.error('Invalid number format in DynamoDB', { 
-					rawValue: lowest_number.number,
-					parsedValue: number
-				});
-				throw new Error('Invalid number format in DynamoDB: ' + lowest_number.number);
+			// Lowest number is the most recent post. Validate every number so one
+			// bad row cannot take the whole site down.
+			const valid = items
+				.map(item => ({ ...item, number: Number(item.number) }))
+				.filter(item => Number.isFinite(item.number));
+			if (valid.length === 0) {
+				throw new Error('No valid numeric rows in DynamoDB');
 			}
+			valid.sort((a, b) => a.number - b.number);
 
-			current_number = number;
-			current_comma = comma(current_number);
-			current_string = numberstring(current_number, { 'cap': 'title', 'punc': '!' });
+			const lowest = valid[0];
+			const formatted = formatNumber(lowest.number);
+			current_number = formatted.number;
+			current_string = formatted.string;
+			current_comma = formatted.comma;
 
-			logger.info('Generated state from DynamoDB', { 
-				number: current_number, 
-				comma: current_comma, 
-				string: current_string 
-			});
+			recent_posts = valid.slice(0, CONFIG.APP.FEED_SIZE).map(item => ({
+				number: item.number,
+				string: item.string || formatNumber(item.number).string,
+				comma: comma(item.number),
+				datetime: item.datetime || null,
+			}));
+			post_count = valid.length;
+			const dated = valid.filter(item => item.datetime).map(item => item.datetime).sort();
+			first_post_at = dated[0] || null;
+			botStatus.last_post_at = lowest.datetime || null;
+			botStatus.last_post_number = lowest.number;
 
-			// Cache the state
-			logger.debug('Caching state');
-			cache.set('countdown_state', {
+			cache.set('countdown_state', { number: current_number, comma: current_comma, string: current_string });
+			logger.info('Loaded countdown state', {
 				number: current_number,
-				comma: current_comma,
-				string: current_string
+				string: current_string,
+				lastPostAt: botStatus.last_post_at,
+				postCount: post_count,
+				firstPostAt: first_post_at,
 			});
-
-			logger.info('=== STATE LOADED AND CACHED ===');
-			logger.info('Loaded countdown state', { 
-				number: current_number, 
-				string: current_string, 
-				comma: current_comma 
-			});
-
-			logger.info('Starting countdown from loaded state');
-			countdown();
 		}
+
+		// Give X a polite pause after boot, then start counting.
 		logger.info('=== INITIALIZATION COMPLETE ===');
+		scheduleCountdown(CONFIG.COUNTDOWN.BOOT_DELAY_MS);
 	} catch (error) {
 		logger.error('=== INITIALIZATION ERROR ===');
-		logger.error('Initialization error', { 
-			error: error.message, 
+		logger.error('Initialization error', {
+			error: error.message,
 			stack: error.stack,
 			name: error.name,
 			code: error.code,
 			region: CONFIG.AWS.REGION,
 			tableName: CONFIG.AWS.TABLE_NAME,
 			hasAccessKey: !!process.env.AWS_ACCESS_KEY_ID,
-			hasSecretKey: !!process.env.AWS_SECRET_ACCESS_KEY
+			hasSecretKey: !!process.env.AWS_SECRET_ACCESS_KEY,
 		});
-		
+
 		// Provide helpful error messages for common issues
 		if (error.name === 'InvalidSignatureException') {
 			logger.error('AWS Credentials Error: The AWS Secret Access Key does not match the Access Key ID.');
-			logger.error('Please verify your AWS credentials in .env file are correct and match.');
 		} else if (error.name === 'ResourceNotFoundException') {
-			logger.error('DynamoDB Table Error: The table does not exist.');
-			logger.error(`Please create the table "${CONFIG.AWS.TABLE_NAME}" in region "${CONFIG.AWS.REGION}"`);
+			logger.error(`DynamoDB Table Error: create the table "${CONFIG.AWS.TABLE_NAME}" in region "${CONFIG.AWS.REGION}"`);
 		} else if (error.name === 'UnrecognizedClientException') {
 			logger.error('AWS Credentials Error: The security token included in the request is invalid.');
-			logger.error('Please check your AWS credentials are valid and not expired.');
 		}
-		
-		logger.warn('Continuing without DynamoDB connection. Web server will still run.');
-		// Don't exit - allow web server to run even if DynamoDB fails
+
+		botStatus.last_error = { stage: 'init', name: error.name, message: error.message, at: new Date().toISOString() };
+		logger.warn('Continuing without DynamoDB connection. Web server will still run, the Count will not.');
 	}
 })();
-
-//*******************************************************************
-// Tweet Content Data
-//*******************************************************************
-
-// Phrases for adding random humorous or engaging variety to tweets.
-const short_phrase = [
-	'Ha ha ha!!',
-	'Ah ah ah!!',
-	'Ah ha ha!!',
-	'Ah ha ha ha!!',
-	'Don\'t forget to count!!',
-	'Wonderful!!',
-	'I love motion pictures!!',
-	'I love counting!!',
-	'Now, that was silly!!',
-	'Wouldn\'t you agree, my bats?',
-	'I love traditions!!',
-	'I will count them!!',	
-	'There\'s always something to count!!',	
-	'Don\'t count the days, make the days count!!',	
-	'Werry good!!',	
-	'Yeees!!',	
-	'You know that I am called the Count!!',	
-	'I really love to count!!',	
-	'I could sit and count all day!!',	
-	'Sometimes I get carried away!!',	
-	'Yeees!!',	
-	'I count slowly!!',	
-	'Once I\'ve started counting it\'s really hard to stop!!',	
-	'I could count forever!!',	
-	'I love counting whatever the amount!!',	
-	'When I\'m alone, I count myself!!',	
-	'Greetings!!',	
-	'Counting is fun!!',
-	'I vant to count your numbers!!',
-	'I love big numbers and I cannot lie!!',
-	'Sometimes I just count away!!',
-	'Numbers are useful!!',
-	'I love to count things!!'
-];
-
-// List of random short tags used for Twitter posts
-const short_tags = [
-	'@CountVonCount',
-	'@CountVonCount',
-	'@CountVonCount',
-	'@SesameWorkshop',
-	'@sesamestreet',
-	'@BigBird',
-	'@OscarTheGrouch',
-	'@elmo',
-	'@MeCookieMonster',
-	'@Grover',
-	'@KermitTheFrog',
-	'@ollie',	
-	'@brianfunk_',
-	'@brianfunk_',
-	'#sesamestreet',
-	'#numberstring',
-	'#numbers',
-	'#count',
-	'#counting',
-	'#ilovecounting',
-	'#iheartcounting',
-	'#ilovenumbers',
-	'#iheartnumbers',
-	'#CountessVonBackwards',
-	'#CountessvonDahling',
-	'#LadyTwo',
-	'#TheCountess',
-	'#CountVonCount',
-	'#countmobile',
-	'#itsthefinalcountdown',
-	'#countdown',
-	'#countupsidedown',
-	'#countingisfun',
-	'#ahhaha',
-	'#yeees'
-];
 
 //*******************************************************************
 // Countdown Function
 //*******************************************************************
 
 /**
- * Main function that decrements the current number, tweets the new count,
- * updates the record in DynamoDB, and schedules the next countdown.
- * 
- * This function:
- * 1. Decrements the current number
- * 2. Formats the number as a string and comma-separated value
- * 3. Randomly adds a phrase and tag (1 in 5 chance)
- * 4. Posts a tweet via Twitter API v2
- * 5. Updates DynamoDB with the new countdown state
- * 6. Schedules the next countdown with a random delay (14-88 days)
- * 
- * Error handling:
- * - Twitter rate limits: waits for rate limit reset before retrying
- * - DynamoDB throttling: uses exponential backoff with up to 5 retries
- * - Other errors: retries after 1 minute delay
- * 
+ * One countdown tick: post the next number, then save it.
+ *
+ * 1. Compute next = current - 1 and its word/comma forms
+ * 2. Build the post text (1 in 5 chance of a phrase and tag)
+ * 3. Post via X API v2 (or log it when DRY_RUN is set)
+ * 4. Only now update in-memory state and write DynamoDB
+ * 5. Schedule the next tick with a random delay (2 to 8 hours)
+ *
+ * On failure nothing is decremented. The retry delay depends on why it
+ * failed: account problems (402 no credits, 401/403) wait 6 hours, rate
+ * limits wait for X's reset, anything else backs off exponentially.
+ *
  * @returns {Promise<void>}
  */
 async function countdown() {
-	logger.info('=== COUNTDOWN FUNCTION START ===');
-	logger.info('Current state before decrement', { 
-		current_number, 
-		current_string, 
-		current_comma 
-	});
+	logger.info('=== COUNTDOWN TICK ===', { current_number, consecutiveFailures: botStatus.consecutive_failures });
 
-	// Validate current_number exists and is valid
 	if (current_number === undefined || current_number === null) {
 		logger.error('Current number is undefined. Cannot continue countdown.');
 		return;
 	}
 
-	// Check for negative numbers - end countdown if reached zero or below
 	if (current_number <= 0) {
-		logger.error('Countdown reached zero or below. Countdown complete!');
-		// Optionally: send final tweet, update status, etc.
+		logger.error('Countdown reached zero. The Count is finished. Ah ah ah!');
 		return;
 	}
 
-	logger.info('Decrementing number', { from: current_number, to: current_number - 1 });
-	current_number--;
-	current_string = numberstring(current_number, { 'cap': 'title', 'punc': '!' });
-	current_comma = comma(current_number);
-
-	logger.info('Updated countdown state', { 
-		number: current_number, 
-		string: current_string, 
-		comma: current_comma 
-	});
+	const next = formatNumber(current_number - 1);
+	const text = buildTweetText(next);
+	logger.info('Post prepared', { number: next.number, text, length: text.length });
 
 	try {
-		// Step 1: Post a tweet with the current count
-		logger.info('=== PREPARING TWEET ===');
-		logger.debug('Preparing tweet');
-
-		current_twext = current_string;
-		logger.debug('Base tweet text', { text: current_twext, length: current_twext.length });
-
-		// Randomly add phrase and tag (1 in 5 chance)
-		const shouldAddPhrase = randomInt(0, CONFIG.COUNTDOWN.PHRASE_PROBABILITY) === CONFIG.COUNTDOWN.PHRASE_PROBABILITY;
-		logger.debug('Phrase probability check', { 
-			randomValue: randomInt(0, CONFIG.COUNTDOWN.PHRASE_PROBABILITY),
-			probability: CONFIG.COUNTDOWN.PHRASE_PROBABILITY,
-			willAddPhrase: shouldAddPhrase
-		});
-
-		if (shouldAddPhrase) {
-			const twext_phrase = short_phrase[randomInt(0, short_phrase.length - 1)];
-			const twext_tag = short_tags[randomInt(0, short_tags.length - 1)];
-
-			logger.info('Adding phrase and tag to tweet', { phrase: twext_phrase, tag: twext_tag });
-
-			current_twext = `${current_comma}! ${twext_phrase} ${twext_tag}`;
+		// Step 1: Post. Nothing changes until this succeeds.
+		if (CONFIG.COUNTDOWN.DRY_RUN) {
+			logger.warn('DRY_RUN set: not posting to X', { text });
+		} else {
+			const tweet = await twitterClient.v2.tweet(text);
+			logger.info('=== POSTED TO X ===', { tweetId: tweet.data?.id, text: tweet.data?.text });
 		}
 
-		// Validate tweet length (Twitter limit is 280 characters)
-		if (current_twext.length > 280) {
-			logger.warn('Tweet too long, truncating', { originalLength: current_twext.length });
-			current_twext = current_twext.substring(0, 277) + '...';
+		// Step 2: Persist. DynamoDB retries throttling itself (adaptive mode, 5 attempts).
+		const datetime = new Date().toISOString();
+		if (CONFIG.COUNTDOWN.DRY_RUN) {
+			logger.warn('DRY_RUN set: not writing to DynamoDB', { number: next.number });
+		} else {
+			await docClient.send(new PutCommand({
+				TableName: CONFIG.AWS.TABLE_NAME,
+				Item: { number: next.number, string: next.string, datetime, status: true },
+			}));
+			logger.info('DynamoDB record inserted', { number: next.number });
 		}
 
-		logger.info('Tweet prepared', { text: current_twext, length: current_twext.length });
+		recordPost(next, datetime);
+		botStatus.consecutive_failures = 0;
+		botStatus.last_error = null;
 
-		// Send the tweet with rate limit handling
-		logger.info('=== POSTING TWEET TO TWITTER API ===');
-		logger.info('Twitter API client status', { 
-			hasClient: !!twitterClient,
-			hasV2: !!twitterClient?.v2,
-			tweetText: current_twext.substring(0, 50) + '...'
-		});
-
-		let tweet;
-		try {
-			logger.info('Calling twitterClient.v2.tweet()', { tweetLength: current_twext.length });
-			tweet = await twitterClient.v2.tweet(current_twext);
-			logger.info('=== TWEET POSTED SUCCESSFULLY ===');
-			logger.info('Tweet response', { 
-				tweetId: tweet.data?.id,
-				text: tweet.data?.text,
-				createdAt: tweet.data?.created_at
-			});
-		} catch (twitterError) {
-			logger.error('=== TWITTER API ERROR ===');
-			logger.error('Twitter API error details', {
-				code: twitterError.code,
-				status: twitterError.status,
-				message: twitterError.message,
-				rateLimit: twitterError.rateLimit,
-				data: twitterError.data
-			});
-
-			// Handle Twitter rate limits (429 Too Many Requests)
-			if (twitterError.code === 429 || twitterError.status === 429) {
-				// Check if daily limit is exhausted - use day.reset instead of general reset
-				const rateLimit = twitterError.rateLimit || {};
-				const dayLimit = rateLimit.day || {};
-				const userDayLimit = rateLimit.userDay || {};
-				
-				// Use daily reset time if daily limit is exhausted, otherwise use general reset
-				let resetTimestamp = null;
-				if (dayLimit.remaining === 0 && dayLimit.reset) {
-					resetTimestamp = dayLimit.reset;
-					logger.warn('Daily tweet limit exhausted - waiting for daily reset', {
-						dailyLimit: dayLimit.limit,
-						dailyRemaining: dayLimit.remaining,
-						resetTimestamp: resetTimestamp
-					});
-				} else if (userDayLimit.remaining === 0 && userDayLimit.reset) {
-					resetTimestamp = userDayLimit.reset;
-					logger.warn('User daily tweet limit exhausted - waiting for daily reset', {
-						userDailyLimit: userDayLimit.limit,
-						userDailyRemaining: userDayLimit.remaining,
-						resetTimestamp: resetTimestamp
-					});
-				} else if (rateLimit.reset) {
-					resetTimestamp = rateLimit.reset;
-				}
-				
-				const retryAfter = resetTimestamp 
-					? Math.max((resetTimestamp * 1000) - Date.now(), 60000) // At least 1 minute
-					: 900000; // Default to 15 minutes if reset time not available
-				
-				logger.warn('Twitter rate limit hit - scheduling retry', { 
-					retryAfterMs: retryAfter,
-					retryAfterSeconds: Math.ceil(retryAfter / 1000),
-					retryAfterMinutes: Math.ceil(retryAfter / 60000),
-					retryAfterHours: (retryAfter / 3600000).toFixed(2),
-					resetTime: resetTimestamp ? new Date(resetTimestamp * 1000).toISOString() : 'unknown',
-					dailyLimit: dayLimit.limit,
-					dailyRemaining: dayLimit.remaining,
-					generalLimit: rateLimit.limit,
-					generalRemaining: rateLimit.remaining
-				});
-				setTimeout(() => countdown(), retryAfter);
-				return;
-			}
-			throw twitterError; // Re-throw if not a rate limit error
-		}
-
-		// Step 2: Update the DynamoDB record with the new number
-		logger.info('=== UPDATING DYNAMODB ===');
-		logger.debug('Updating DynamoDB', { tableName: CONFIG.AWS.TABLE_NAME });
-
-		const insertParams = {
-			TableName: CONFIG.AWS.TABLE_NAME,
-			Item: {
-				number: current_number,
-				string: current_string,
-				datetime: new Date().toISOString(),
-				status: true,
-			},
+		scheduleCountdown(randomInt(CONFIG.COUNTDOWN.DELAY_MIN_MS, CONFIG.COUNTDOWN.DELAY_MAX_MS));
+	} catch (error) {
+		botStatus.consecutive_failures++;
+		const retry = nextRetryDelay(error, botStatus.consecutive_failures);
+		botStatus.last_error = {
+			stage: 'post',
+			kind: retry.kind,
+			code: error?.code ?? error?.status ?? null,
+			name: error?.name,
+			message: error?.data?.detail || error?.message,
+			at: new Date().toISOString(),
 		};
 
-		logger.debug('DynamoDB PutCommand params', { 
-			tableName: insertParams.TableName,
-			number: insertParams.Item.number,
-			hasString: !!insertParams.Item.string,
-			datetime: insertParams.Item.datetime
+		logger.error('=== COUNTDOWN TICK FAILED ===', {
+			kind: retry.kind,
+			code: botStatus.last_error.code,
+			name: error?.name,
+			message: error?.message,
+			data: error?.data,
+			rateLimit: error?.rateLimit,
+			consecutiveFailures: botStatus.consecutive_failures,
+			numberNotPosted: next.number,
 		});
-
-		// DynamoDB operations with retry handling for throttling
-		let retries = 0;
-		const maxRetries = 5;
-		while (retries < maxRetries) {
-			try {
-				logger.info('Sending PutCommand to DynamoDB', { attempt: retries + 1, maxRetries });
-				await docClient.send(new PutCommand(insertParams));
-				logger.info('=== DYNAMODB UPDATE SUCCESSFUL ===');
-				logger.info('Inserted new record', { number: current_number });
-				
-				// Update cache with new state
-				logger.debug('Updating cache with new state');
-				cache.set('countdown_state', {
-					number: current_number,
-					comma: current_comma,
-					string: current_string
-				});
-				logger.debug('Cache updated successfully');
-				
-				break; // Success, exit retry loop
-			} catch (dynamoError) {
-				logger.error('DynamoDB error', {
-					name: dynamoError.name,
-					message: dynamoError.message,
-					httpStatusCode: dynamoError.$metadata?.httpStatusCode,
-					requestId: dynamoError.$metadata?.requestId,
-					attempt: retries + 1
-				});
-
-				// Handle DynamoDB throttling (ProvisionedThroughputExceededException)
-				if (dynamoError.name === 'ProvisionedThroughputExceededException' || 
-				    dynamoError.$metadata?.httpStatusCode === 400) {
-					retries++;
-					const backoffDelay = Math.min(1000 * Math.pow(2, retries), 30000); // Exponential backoff, max 30s
-					logger.warn('DynamoDB throttled - retrying with backoff', { 
-						retry: retries, 
-						maxRetries, 
-						backoffDelayMs: backoffDelay,
-						backoffDelaySeconds: Math.ceil(backoffDelay / 1000)
-					});
-					await new Promise(resolve => setTimeout(resolve, backoffDelay));
-				} else {
-					throw dynamoError; // Re-throw if not a throttling error
-				}
-			}
-		}
-		
-		if (retries >= maxRetries) {
-			logger.error('=== DYNAMODB UPDATE FAILED AFTER MAX RETRIES ===');
-			throw new Error('Failed to update DynamoDB after maximum retries');
+		if (retry.kind === 'account') {
+			logger.error(`ACTION NEEDED: ${retry.reason}`);
+		} else {
+			logger.warn(retry.reason);
 		}
 
-		// Schedule next countdown with random delay
-		// Delay ranges from ~14 days to ~88 days (1234567ms to 7654321ms)
-		logger.info('=== SCHEDULING NEXT COUNTDOWN ===');
-		const delay = randomInt(CONFIG.COUNTDOWN.DELAY_MIN_MS, CONFIG.COUNTDOWN.DELAY_MAX_MS);
-		const delayHours = delay / 3600000;
-		const delayDays = delayHours / 24;
-		logger.info('Next countdown scheduled', { 
-			delayMs: delay, 
-			delayHours: delayHours.toFixed(2),
-			delayDays: delayDays.toFixed(2),
-			nextRunTime: new Date(Date.now() + delay).toISOString()
-		});
-
-		setTimeout(() => countdown(), delay);
-		logger.info('=== COUNTDOWN FUNCTION COMPLETE ===');
-
-	} catch (error) {
-		logger.error('=== COUNTDOWN FUNCTION ERROR ===');
-		logger.error('Countdown error', { 
-			error: error.message, 
-			stack: error.stack,
-			name: error.name,
-			code: error.code
-		});
-
-		// Retry after shorter delay on error (1 minute)
-		logger.info('Retrying countdown after error', { 
-			retryDelayMs: CONFIG.COUNTDOWN.ERROR_RETRY_DELAY_MS,
-			retryDelaySeconds: CONFIG.COUNTDOWN.ERROR_RETRY_DELAY_MS / 1000,
-			nextRetryTime: new Date(Date.now() + CONFIG.COUNTDOWN.ERROR_RETRY_DELAY_MS).toISOString()
-		});
-		setTimeout(() => countdown(), CONFIG.COUNTDOWN.ERROR_RETRY_DELAY_MS);
+		scheduleCountdown(retry.delayMs);
 	}
 }
 
@@ -790,108 +563,23 @@ app.use((req, res, next) => {
 	if (!req.timedout) next();
 });
 
-// Security middleware with Content Security Policy
-// Maximally permissive CSP for public site - allows all external resources
-// This prevents breakage if embedded sites change their domains/scripts
+// Security middleware with Content Security Policy.
+// Only what the page actually uses: our own assets, Google Fonts, the YouTube embed.
 app.use(helmet({
 	contentSecurityPolicy: {
 		directives: {
-			defaultSrc: ["'self'", 'https:', 'http:', 'data:', 'blob:'],
-			scriptSrc: [
-				"'self'",
-				"'unsafe-inline'",
-				"'unsafe-eval'", // Allow eval for maximum compatibility
-				'https:',
-				'http:',
-				'data:',
-				'blob:'
-			],
-			scriptSrcElem: [
-				"'self'",
-				"'unsafe-inline'",
-				'https:',
-				'http:',
-				'data:',
-				'blob:'
-			],
-			scriptSrcAttr: [
-				"'self'",
-				"'unsafe-inline'",
-				'https:',
-				'http:'
-			],
-			styleSrc: [
-				"'self'",
-				"'unsafe-inline'",
-				'https:',
-				'http:',
-				'data:'
-			],
-			styleSrcElem: [
-				"'self'",
-				"'unsafe-inline'",
-				'https:',
-				'http:',
-				'data:'
-			],
-			fontSrc: [
-				"'self'",
-				'https:',
-				'http:',
-				'data:'
-			],
-			imgSrc: [
-				"'self'",
-				'data:',
-				'blob:',
-				'https:',
-				'http:'
-			],
-			frameSrc: [
-				"'self'",
-				'https:',
-				'http:',
-				'data:',
-				'blob:'
-			],
-			frameAncestors: [
-				"'self'"
-			],
-			connectSrc: [
-				"'self'",
-				'https:',
-				'http:',
-				'ws:',
-				'wss:',
-				'data:'
-			],
-			mediaSrc: [
-				"'self'",
-				'https:',
-				'http:',
-				'data:',
-				'blob:'
-			],
-			objectSrc: [
-				"'self'",
-				'https:',
-				'http:',
-				'data:',
-				'blob:'
-			],
-			baseUri: ["'self'", 'https:', 'http:'],
-			formAction: ["'self'", 'https:', 'http:'],
-			workerSrc: [
-				"'self'",
-				'blob:',
-				'https:',
-				'http:'
-			],
-			manifestSrc: [
-				"'self'",
-				'https:',
-				'http:'
-			]
+			defaultSrc: ["'self'"],
+			scriptSrc: ["'self'", "'unsafe-inline'"],
+			styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+			fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+			imgSrc: ["'self'", 'data:', 'https:'],
+			frameSrc: ['https://www.youtube.com', 'https://www.youtube-nocookie.com'],
+			frameAncestors: ["'self'"],
+			connectSrc: ["'self'"],
+			objectSrc: ["'none'"],
+			baseUri: ["'self'"],
+			formAction: ["'self'"],
+			upgradeInsecureRequests: [],
 		}
 	}
 }));
@@ -936,10 +624,24 @@ app.get('/favicon.ico', (req, res) => {
 });
 
 app.get('/', (req, res) => {
+	const now = Date.now();
 	res.render('home', {
 		current_number: current_number,
 		current_string: current_string,
-		current_comma: current_comma
+		current_comma: current_comma,
+		x_url: CONFIG.APP.X_URL,
+		recent_posts: recent_posts.map(post => ({
+			...post,
+			when: post.datetime ? relativeTime(post.datetime, now) : 'some time ago',
+		})),
+		stats: computeStats({
+			startNumber: CONFIG.APP.START_NUMBER,
+			currentNumber: current_number ?? CONFIG.APP.START_NUMBER,
+			firstPostAt: first_post_at,
+			lastPostAt: botStatus.last_post_at,
+			postCount: post_count,
+			now,
+		}),
 	});
 });
 
@@ -971,11 +673,13 @@ app.get('/badge', async (req, res) => {
 });
 
 app.get('/health', healthLimiter, (req, res) => {
+	const degraded = !!botStatus.last_error || current_number === undefined;
 	res.json({
-		status: 'ok',
-		current_number: current_number || null,
+		status: degraded ? 'degraded' : 'ok',
+		current_number: current_number ?? null,
 		current_string: current_string || null,
 		current_comma: current_comma || null,
+		bot: botStatus,
 		uptime: process.uptime(),
 		timestamp: new Date().toISOString()
 	});
