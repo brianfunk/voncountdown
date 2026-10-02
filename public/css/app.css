@@ -60,42 +60,156 @@ body {
 
 #tweets {
 	float: right;
+	width: 560px;
 }
 
-#wikiembed {
+#twitter > img {
+	float: left;
+	max-height: 380px;
+	margin-left: 40px;
+}
+
+#twitter::after,
+#vidpedia::after {
+	content: "";
+	display: block;
+	clear: both;
+}
+
+/* Shared card used by the feed and the ledger */
+.card {
+	border: 1px solid #e1d6ee;
+	border-radius: 8px;
+	padding: 18px 20px;
+	background: #fff;
+	font: normal 14px/1.5 Helvetica, Roboto, "Segoe UI", Calibri, sans-serif;
+	color: #14171a;
+}
+
+.card-head {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-bottom: 12px;
+}
+
+.card-head h3 {
+	margin: 0;
+	font-size: 18px;
+}
+
+.card-head h3 a {
+	color: #412c88;
+	text-decoration: none;
+}
+
+.card-head h3 a:hover {
+	text-decoration: underline;
+}
+
+.card-sub {
+	margin-left: auto;
+	color: #657786;
+	font-size: 12px;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+}
+
+.card-foot {
+	margin: 12px 0 0 0;
+	font-size: 12px;
+}
+
+.card a {
+	color: #3b94d9;
+	text-decoration: none;
+}
+
+.card a:hover {
+	color: #55acee;
+}
+
+.feed {
+	list-style: none;
+	margin: 0;
+	padding: 0 6px 0 0;
+	max-height: 340px;
+	overflow-y: auto;
+}
+
+.feed li {
+	padding: 8px 0;
+	border-top: 1px solid #f0ebf5;
+}
+
+.feed li:first-child {
+	border-top: 0;
+}
+
+.feed-number {
+	font-family: 'Josefin Slab', serif;
+	font-size: 18px;
+	font-weight: bold;
+	color: #412c88 !important;
+}
+
+.feed-words {
+	display: block;
+	color: #333;
+}
+
+.feed-when {
+	display: block;
+	color: #657786;
+	font-size: 12px;
+}
+
+.feed-empty {
+	color: #657786;
+	margin: 0;
+}
+
+.ledger {
+	margin: 0;
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	column-gap: 14px;
+	row-gap: 6px;
+}
+
+.ledger dt {
+	color: #657786;
+}
+
+.ledger dd {
+	margin: 0;
+	font-weight: bold;
+	color: #412c88;
+}
+
+#ledger {
 	display: inline-block;
 	width: 400px;
-	height: 340px;	
-}
-#wikiembed iframe {
-	border: 0px;
-	width: 100%;
-	height: 100%;	
-}
-
-#wikiembed div img {
-	vertical-align: middle;
-	height: 24px;
-}
-
-#wikiembed div a {
-	font: normal normal 12px/1.4 Helvetica,Roboto,"Segoe UI",Calibri,sans-serif;
-    color: #3b94d9;
-    text-decoration: none;
-    outline: 0;
-	float: right;
-}
-#wikiembed div a:hover {
-	font: normal normal 12px/1.4 Helvetica,Roboto,"Segoe UI",Calibri,sans-serif;
-    color: #55acee;
-    text-decoration: none;
-    outline: 0;	
 }
 
 #followbtn {
 	position: relative;
 	top: 50%;
 	float: left;
+}
+
+.follow-link {
+	display: inline-block;
+	background: #412c88;
+	color: #fff;
+	padding: 12px 22px;
+	border-radius: 24px;
+	text-decoration: none;
+	font: bold 16px Helvetica, Roboto, "Segoe UI", Calibri, sans-serif;
+}
+
+.follow-link:hover {
+	background: #5b3fb8;
 }
 
 #badger {

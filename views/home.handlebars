@@ -4,37 +4,37 @@
 		{{current_string}}
 	</div>
 	<div id="badger">
-		<a href="https://github.com/brianfunk/voncountdown"><img src="/badge" /></a>
+		<a href="https://github.com/brianfunk/voncountdown"><img src="/badge" alt="Von Countdown badge" /></a>
 	</div>
 </div>
 
 <div id="numberimg" data-number="{{current_number}}">
 </div>
 
-<!--
-<div>
-	current_number: {{current_number}}
-	<br/>
-	current_string: {{current_string}}
-	<br/>
-	current_comma: {{current_comma}}
-</div>
--->
-
 <section id="twitter">
-	<img src="/img/CountVonCount.jpg" title="Count Von Countdown"/>
-	<div id="tweets">	
-		<div style="border: 1px solid #e1e8ed; border-radius: 8px; padding: 20px; background: #fff; max-width: 520px;">
-			<div style="display: flex; align-items: center; margin-bottom: 15px;">
-				<svg width="24" height="24" viewBox="0 0 24 24" fill="#1DA1F2" style="margin-right: 10px;">
+	<img src="/img/CountVonCount.jpg" title="Count Von Countdown" alt="Count Von Count"/>
+	<div id="tweets">
+		<div class="card">
+			<div class="card-head">
+				<svg width="24" height="24" viewBox="0 0 24 24" fill="#412c88" aria-hidden="true">
 					<path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
 				</svg>
-				<h3 style="margin: 0; color: #14171a; font-size: 18px;">@VonCountdown</h3>
+				<h3><a href="{{x_url}}" target="_blank" rel="noopener noreferrer">@VonCountdown</a></h3>
+				<span class="card-sub">Recent counts</span>
 			</div>
-			<p style="color: #657786; margin-bottom: 20px;">Follow us on X (Twitter) for the latest countdown updates!</p>
-			<a href="https://x.com/VonCountdown" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #1DA1F2; color: white; padding: 10px 20px; border-radius: 20px; text-decoration: none; font-weight: bold; transition: background-color 0.2s;">
-				View on X →
-			</a>
+			{{#if recent_posts.length}}
+			<ol class="feed">
+				{{#each recent_posts}}
+				<li>
+					<a href="{{../x_url}}" target="_blank" rel="noopener noreferrer" class="feed-number">{{this.comma}}</a>
+					<span class="feed-words">{{this.string}}</span>
+					<span class="feed-when">{{this.when}}</span>
+				</li>
+				{{/each}}
+			</ol>
+			{{else}}
+			<p class="feed-empty">The Count is clearing his throat. Ah ah ah!</p>
+			{{/if}}
 		</div>
 	</div>
 </section>
@@ -45,13 +45,25 @@
 
 <div id="vidpedia">
 
-	<div id="wikiembed">
-		<div>
-			<a href="https://sesameworkshop.org/our-work/shows/sesame-street/sesame-street-characters/count-von-count/">View on Sesame Workshop</a>
+	<div id="ledger">
+		<div class="card">
+			<div class="card-head">
+				<h3>The Count's Ledger</h3>
+			</div>
+			<dl class="ledger">
+				<dt>Numbers counted</dt><dd>{{stats.countedSoFar}}</dd>
+				<dt>Counting since</dt><dd>{{stats.countingSince}}</dd>
+				<dt>Last count</dt><dd>{{stats.lastCount}}</dd>
+				<dt>Pace</dt><dd>about {{stats.pacePerDay}} a day</dd>
+				<dt>Numbers left</dt><dd>{{stats.numbersLeft}}</dd>
+				<dt>Arrival at zero</dt><dd>{{stats.eta}} from now. Ah ah ah!</dd>
+			</dl>
+			<p class="card-foot">
+				<a href="https://sesameworkshop.org/our-work/shows/sesame-street/sesame-street-characters/count-von-count/" target="_blank" rel="noopener noreferrer">About the Count on Sesame Workshop</a>
+			</p>
 		</div>
-		<iframe src="https://sesameworkshop.org/our-work/shows/sesame-street/sesame-street-characters/count-von-count/"></iframe>
 	</div>
-	
+
 	<div id="vidlaugh">
 		<iframe width="395" height="220" src="https://www.youtube.com/embed/p3pKcRSmw2w?si=7H4BGY1rFMDfcvKP" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 	</div>
@@ -60,35 +72,20 @@
 
 <div id="botter" class="parallax">
 	<div id="followbtn">
-		<a href="https://x.com/VonCountdown" class="twitter-follow-button" data-size="large" data-lang="en" data-dnt="true" data-show-count="false">Follow @VonCountdown</a>
-	</div>	
+		<a href="{{x_url}}" class="follow-link" target="_blank" rel="noopener noreferrer">Follow @VonCountdown on X</a>
+	</div>
 </div>
 
-<script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
-
 <script>
-function addImg(num) {
-	// Escape the number to prevent XSS
-	const safeNum = String(num).replace(/[^0-9]/g, '');
-	if (safeNum) {
-		$('#numberimg').append('<img id="img_'+ safeNum +'" src="/img/cvc_'+ safeNum +'.png" alt="Number '+ safeNum +'" />');
+(function () {
+	var holder = document.getElementById('numberimg');
+	if (!holder) return;
+	var digits = String(holder.dataset.number || '').replace(/[^0-9]/g, '');
+	for (var i = 0; i < digits.length; i++) {
+		var img = document.createElement('img');
+		img.src = '/img/cvc_' + digits.charAt(i) + '.png';
+		img.alt = 'Number ' + digits.charAt(i);
+		holder.appendChild(img);
 	}
-}
-
-// Safely get number from data attribute to prevent XSS
-const numberElement = document.getElementById('numberimg');
-const currentNumber = numberElement ? numberElement.dataset.number : '';
-const cur_num = String(currentNumber || '');
-
-if (cur_num) {
-	for (var i=0; i<cur_num.length; i++) {	
-		const digit = cur_num.charAt(i);
-		// Validate digit is 0-9
-		if (/^[0-9]$/.test(digit)) {
-			addImg(digit);
-			console.log(digit);
-		}
-	}
-}
-
+})();
 </script>
