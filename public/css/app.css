@@ -173,18 +173,37 @@ body {
 	margin: 0;
 	display: grid;
 	grid-template-columns: max-content 1fr;
-	column-gap: 14px;
-	row-gap: 6px;
+	column-gap: 16px;
+	row-gap: 8px;
+	font-family: 'Josefin Slab', serif;
+	font-size: 17px;
 }
 
 .ledger dt {
-	color: #657786;
+	color: #7a6aa6;
 }
 
 .ledger dd {
 	margin: 0;
 	font-weight: bold;
 	color: #412c88;
+}
+
+#ledger .card {
+	background: #fff linear-gradient(to bottom, #ffffff, #f6f0f9);
+	border-color: #d9c7e6;
+}
+
+#ledger .card-head h3 {
+	font-family: 'New Rocker', cursive;
+	font-weight: normal;
+	font-size: 30px;
+	color: #412c88;
+}
+
+#ledger .card-foot a {
+	font-family: 'Josefin Slab', serif;
+	font-size: 14px;
 }
 
 #ledger {
