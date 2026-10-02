@@ -1,0 +1,13 @@
+{
+	"name": "Count Von Countdown",
+	"short_name": "VonCountdown",
+	"description": "A silly bot counting down from 1,111,373,357,579, one number at a time.",
+	"start_url": "/",
+	"display": "browser",
+	"background_color": "#ffffff",
+	"theme_color": "#412c88",
+	"icons": [
+		{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+		{ "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+	]
+}

@@ -1,0 +1,24 @@
+/* TEAM */
+	Creator: Brian Funk
+	Site: https://github.com/brianfunk
+	X: @brianfunk_
+
+/* THE COUNT */
+	Role: Chief Counting Officer
+	X: @VonCountdown
+	Catchphrase: Ah ah ah!
+	Started counting: February 20, 2024
+	Starting number: 1,111,373,357,579
+	Expected to reach zero: in a few hundred million years
+
+/* THANKS */
+	Count von Count and Sesame Workshop, for the inspiration
+	Jerry Nelson, the original voice of the Count
+
+/* SITE */
+	Last update: 2026/10/02
+	Language: English, Vampire
+	Standards: HTML5, CSS3
+	Components: Node.js, Express, Handlebars, DynamoDB, X API v2
+	Hosting: AWS App Runner
+	Source: https://github.com/brianfunk/voncountdown
