@@ -1,0 +1,6 @@
+# Count Von Countdown. Everything to count, nothing to hide.
+User-agent: *
+Allow: /
+Disallow: /health
+
+Sitemap: https://voncountdown.com/sitemap.xml
